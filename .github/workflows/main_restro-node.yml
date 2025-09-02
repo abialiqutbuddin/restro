@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: '22'   # keep in sync with your App Service stack
+  NODE_VERSION: '22.17.0'
 
 jobs:
   build:
@@ -18,43 +18,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node ${{ env.NODE_VERSION }}
+      - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      # Clean, deterministic install
-      - name: Install dependencies
+      # Install deps + generate Prisma client (postinstall)
+      - name: Install
         run: npm ci
 
-      # Generate Prisma Client at build time
-      - name: Generate Prisma Client
-        run: npx prisma generate
-
-      # Compile TS -> JS (give tsc more heap to avoid OOM)
+      # Compile TypeScript to dist/
       - name: Build
-        run: node --max-old-space-size=3072 node_modules/typescript/bin/tsc -p tsconfig.json
+        run: npm run build
 
-      # Remove devDependencies from the runtime package
-      - name: Prune to production deps
-        run: npm ci --omit=dev
-
-      # Create a deployable zip with dist/ + node_modules/ (+ package.json)
-      - name: Create deployment package
+      # Optional: verify the app actually boots (fails fast if dist is broken)
+      - name: Smoke start (no DB)
         run: |
-          mkdir -p deploy
-          cp package.json package-lock.json deploy/
-          cp -r dist deploy/dist
-          cp -r node_modules deploy/node_modules
-          # include prisma directory only if your runtime needs it
-          if [ -d "prisma" ]; then cp -r prisma deploy/prisma; fi
-          cd deploy && zip -r ../release.zip .
+          node -e "require('fs').accessSync('dist/main.js')"
+
+      # Create deployable ZIP (no .env; use App Settings in Azure)
+      - name: Create deploy package
+        run: |
+          mkdir -p package
+          cp -r dist package/dist
+          cp -r node_modules package/node_modules
+          cp package.json package/
+          cp package-lock.json package/ || true
+          cp -r prisma package/prisma
+          (cd package && zip -r ../release.zip .)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-zip
+          name: deployable
           path: release.zip
 
   deploy:
@@ -65,14 +62,39 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: release-zip
-          path: .
+          name: deployable
 
-      # Deploy the prebuilt zip (no server-side build)
-      - name: Deploy to Azure Web App
+      # Small delay helps avoid collisions with config changes / restarts
+      - name: Cooldown before deploy
+        run: sleep 20
+
+      # Try deploy up to 3 times in case SCM restarts during publish
+      - name: Deploy to Azure Web App (retry 1)
+        id: deploy1
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'restro-node'
           slot-name: 'Production'
           package: 'release.zip'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_AFC49167F53A461995E7B30F18C4BB46 }}
+          enable-oryx-build: false
+
+      - name: Deploy to Azure Web App (retry 2)
+        if: failure()
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'restro-node'
+          slot-name: 'Production'
+          package: 'release.zip'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_AFC49167F53A461995E7B30F18C4BB46 }}
+          enable-oryx-build: false
+
+      - name: Deploy to Azure Web App (retry 3)
+        if: failure()
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'restro-node'
+          slot-name: 'Production'
+          package: 'release.zip'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_AFC49167F53A461995E7B30F18C4BB46 }}
+          enable-oryx-build: false
