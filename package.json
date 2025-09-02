@@ -12,7 +12,7 @@
     "dev": "nodemon --watch src --exec ts-node src/main.ts",
     "build": "tsc -p tsconfig.json",
     "prestart": "node -e \"const fs=require('fs'); if(!fs.existsSync('dist')){process.exit(1)}\" || npm run build",
-    "start": "prisma generate && node dist/main.js",
+    "start": "node dist/index.js",
     "start:prod": "prisma generate && node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
