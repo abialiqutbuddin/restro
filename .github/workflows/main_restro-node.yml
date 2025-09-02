@@ -1,100 +1,55 @@
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+
 name: Build and deploy Node.js app to Azure Web App - restro-node
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
-
-env:
-  NODE_VERSION: '22.17.0'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read #This is required for actions/checkout
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Use Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - name: Set up Node.js version
+        uses: actions/setup-node@v3
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          node-version: '22.x'
 
-      # Install deps + generate Prisma client (postinstall)
-      - name: Install
-        run: npm ci
-
-      # Compile TypeScript to dist/
-      - name: Build
-        run: npm run build
-
-      # Optional: verify the app actually boots (fails fast if dist is broken)
-      - name: Smoke start (no DB)
+      - name: npm install, build, and test
         run: |
-          node -e "require('fs').accessSync('dist/main.js')"
+          npm install
+          npm run build --if-present
+          npm run test --if-present
 
-      # Create deployable ZIP (no .env; use App Settings in Azure)
-      - name: Create deploy package
-        run: |
-          mkdir -p package
-          cp -r dist package/dist
-          cp -r node_modules package/node_modules
-          cp package.json package/
-          cp package-lock.json package/ || true
-          cp -r prisma package/prisma
-          (cd package && zip -r ../release.zip .)
-
-      - name: Upload artifact
+      - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
-          name: deployable
-          path: release.zip
+          name: node-app
+          path: .
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-
+    
     steps:
-      - name: Download artifact
+      - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
-          name: deployable
-
-      # Small delay helps avoid collisions with config changes / restarts
-      - name: Cooldown before deploy
-        run: sleep 20
-
-      # Try deploy up to 3 times in case SCM restarts during publish
-      - name: Deploy to Azure Web App (retry 1)
-        id: deploy1
+          name: node-app
+      
+      - name: 'Deploy to Azure Web App'
+        id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'restro-node'
           slot-name: 'Production'
-          package: 'release.zip'
+          package: .
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_AFC49167F53A461995E7B30F18C4BB46 }}
-          enable-oryx-build: false
-
-      - name: Deploy to Azure Web App (retry 2)
-        if: failure()
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'restro-node'
-          slot-name: 'Production'
-          package: 'release.zip'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_AFC49167F53A461995E7B30F18C4BB46 }}
-          enable-oryx-build: false
-
-      - name: Deploy to Azure Web App (retry 3)
-        if: failure()
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'restro-node'
-          slot-name: 'Production'
-          package: 'release.zip'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_AFC49167F53A461995E7B30F18C4BB46 }}
-          enable-oryx-build: false
