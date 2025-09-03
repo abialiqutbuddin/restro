@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { IsArray, IsDateString, IsEmail, IsNumber, IsOptional, IsString, ArrayNotEmpty } from 'class-validator';
 import { EventsService } from './events.service';
 import { ImportEventDto } from './import-events.dto';
@@ -11,12 +11,16 @@ class CreateEventDto {
   @IsOptional() @IsEmail() customerEmail?: string;
   @IsOptional() @IsString() venue?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() calendarText?: string;
 
   @IsOptional() @IsNumber() deliveryFee?: number;
   @IsOptional() @IsNumber() serviceFee?: number;
 
-  @IsOptional() @IsString() status?: string;         // 'new' | 'incomplete' | 'complete'
-  @IsOptional() @IsString() gcalEventId?: string;    // 👈 pass-through to service
+  @IsOptional() @IsNumber() headcountEst?: number;
+  @IsOptional() isDelivery?: boolean;
+
+  @IsOptional() @IsString() status?: string;         
+  @IsOptional() @IsString() gcalEventId?: string;
 }
 
 class CheckEventsDto {
@@ -55,4 +59,22 @@ export class EventsController {
   getByGcal(@Param('id') id: string) {
     return this.svc.getByGcalId(id);
   }
+
+    /** GET /api/events/:id → single row (no deep relations) */
+  @Get(':id')
+  getById(@Param('id', ParseIntPipe) id: number) {
+    return this.svc.getById(id);
+  }
+
+  /** GET /api/events/:id/tree → full nested tree */
+  @Get(':id/tree')
+  getTreeById(@Param('id', ParseIntPipe) id: number) {
+    return this.svc.getTreeById(id);
+  }
+
+    @Get(':id/view')
+  getEventView(@Param('id') id: string) {
+    return this.svc.getEventView(id);
+  }
+  
 }

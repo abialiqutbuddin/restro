@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ImportEventDto } from './import-events.dto';
@@ -16,6 +16,14 @@ type CreateEventInput = {
   isDelivery?: boolean;
   status?: string;         // e.g. 'new' | 'incomplete' | 'complete'
   gcalEventId?: string;    // 👈 new
+};
+
+const asNum = (v: unknown): number | null => {
+  if (v == null) return null;
+  if (typeof v === 'bigint') return Number(v);
+  if (v instanceof Prisma.Decimal) return Number(v);
+  if (typeof v === 'number') return v;
+  return Number(v as any);
 };
 
 @Injectable()
@@ -113,7 +121,11 @@ export class EventsService {
         customer_email: dto.customerEmail ?? null,
         event_datetime: new Date(dto.eventDatetime),
         venue: dto.venue ?? null,
+
+        // 👇 keep them separate
         notes: dto.notes ?? null,
+        calender_text: dto.calendarText ?? null,  // (column name kept as-is)
+
         is_delivery: dto.isDelivery ?? false,
         delivery_charges: dto.deliveryCharges != null ? new Prisma.Decimal(dto.deliveryCharges) : null,
         service_charges: dto.serviceCharges != null ? new Prisma.Decimal(dto.serviceCharges) : null,
@@ -127,13 +139,16 @@ export class EventsService {
           where: { gcalEventId: dto.gcalEventId },
           create: baseEventData,
           update: {
-            // you may want to update customer/venue on re-import
             customer_name: dto.customerName,
             customer_phone: dto.customerPhone ?? null,
             customer_email: dto.customerEmail ?? null,
             event_datetime: new Date(dto.eventDatetime),
             venue: dto.venue ?? null,
+
+            // 👇 keep them separate
             notes: dto.notes ?? null,
+            calender_text: dto.calendarText ?? null,
+
             is_delivery: dto.isDelivery ?? false,
             delivery_charges: dto.deliveryCharges != null ? new Prisma.Decimal(dto.deliveryCharges) : null,
             service_charges: dto.serviceCharges != null ? new Prisma.Decimal(dto.serviceCharges) : null,
@@ -229,5 +244,152 @@ export class EventsService {
       return updated;
     });
   }
+
+  /** Flat fetch (no deep relations) */
+  async getById(id: number) {
+    const row = await this.prisma.events.findUnique({
+      where: { id },
+    });
+    if (!row) throw new NotFoundException(`Event ${id} not found`);
+    return row;
+  }
+
+  /** Full nested tree: event → caterings → orders → items */
+  async getTreeById(id: number) {
+    const row = await this.prisma.events.findUnique({
+      where: { id },
+      include: {
+        event_caterings: {
+          orderBy: { id: 'asc' },
+          include: {
+            event_catering_orders: {
+              orderBy: { id: 'asc' },
+              include: {
+                event_catering_menu_items: {
+                  orderBy: { position_number: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException(`Event ${id} not found`);
+    return row;
+  }
+
+  /** Get a view of event with summary data */
+  async getEventView(gcalId: string) {
+    const ev = await this.prisma.events.findUnique({
+      where: { gcalEventId: gcalId }, // id is BigInt in schema
+      include: {
+        event_caterings: {
+          include: {
+            category: true, // id, name, slug
+            event_catering_orders: {
+              include: {
+                unit: true, // pricing_unit { code, label, qty_label }
+                event_catering_menu_items: {
+                  include: {
+                    item: true, // menu_items { id, name }
+                    size: true, // sizes { id, name } (nullable)
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!ev) throw new NotFoundException(`Event ${gcalId} not found`);
+
+    // Totals
+    let itemsSubtotal = 0;
+
+    const caterings = ev.event_caterings.map((c) => {
+      const orders = c.event_catering_orders.map((o) => {
+        const qty = asNum(o.qty) ?? 0;
+        const unitPrice = asNum(o.unit_price) ?? 0;
+        const lineSubtotal = qty * unitPrice;
+        itemsSubtotal += lineSubtotal;
+
+        const items = o.event_catering_menu_items.map((mi) => {
+          const qtyPerUnit = asNum(mi.qty_per_unit) ?? 1;
+          const componentPrice = asNum(mi.component_price);
+          const componentSubtotalForOne =
+            componentPrice == null ? null : qtyPerUnit * componentPrice;
+
+          return {
+            id: Number(mi.id),
+            position: mi.position_number,
+            item: mi.item && { id: Number(mi.item.id), name: mi.item.name },
+            size: mi.size ? { id: Number(mi.size.id), name: mi.size.name } : null,
+            qtyPerUnit,
+            componentPrice,
+            componentSubtotalForOne,
+            notes: mi.notes,
+          };
+        });
+
+        return {
+          id: Number(o.id),
+          unit: {
+            code: o.unit.code,
+            label: o.unit.label,
+            qtyLabel: o.unit.qty_label,
+          },
+          pricingMode: o.pricing_mode, // per_unit_manual | per_unit_from_items
+          qty,
+          unitPrice,
+          currency: o.currency,
+          lineSubtotal,
+          calcNotes: o.calc_notes,
+          items,
+        };
+      });
+
+      const cateringSubtotal = orders.reduce((s, x) => s + x.lineSubtotal, 0);
+
+      return {
+        id: Number(c.id),
+        category: c.category && {
+          id: Number(c.category.id),
+          name: c.category.name,
+          slug: c.category.slug,
+        },
+        titleOverride: c.title_override,
+        instructions: c.instructions,
+        subtotal: cateringSubtotal,
+        orders,
+      };
+    });
+
+    const delivery = asNum(ev.delivery_charges) ?? 0;
+    const service = asNum(ev.service_charges) ?? 0;
+    const grandTotal = itemsSubtotal + delivery + service;
+
+    return {
+      id: Number(ev.id),
+      gcalEventId: ev.gcalEventId,
+      customerName: ev.customer_name,
+      customerPhone: ev.customer_phone,
+      customerEmail: ev.customer_email,
+      eventDate: ev.event_datetime,
+      venue: ev.venue,
+      notes: ev.notes,
+      calendarText: ev.calender_text,
+      isDelivery: !!ev.is_delivery,
+      status: ev.status,
+      totals: {
+        itemsSubtotal,
+        delivery,
+        service,
+        grandTotal,
+      },
+      caterings,
+    };
+  }
+
 
 }

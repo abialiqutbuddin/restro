@@ -141,6 +141,10 @@ export class ImportEventDto {
   @IsDateString()
   eventDatetime!: string; // ISO 8601
 
+  @IsOptional() 
+  @IsString() 
+  calendarText?: string;
+
   @IsOptional()
   @IsString()
   venue?: string;

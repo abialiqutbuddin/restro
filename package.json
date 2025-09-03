@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --watch src --exec ts-node src/main.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "echo \"skip build on Azure\"",
     "start": "node dist/main.js",
     "postinstall": "prisma generate",
     "start:prod": "node dist/main.js",
