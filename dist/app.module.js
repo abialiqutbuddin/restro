@@ -16,6 +16,8 @@ const gcal_module_1 = require("./modules/gcal/gcal.module");
 const menu_items_module_1 = require("./modules/menu-items/menu-items.module");
 const lookup_module_1 = require("./modules/lookups/lookup.module");
 const seed_controller_1 = require("./seed/seed.controller");
+const customers_module_1 = require("./modules/customers/customers.module");
+const payments_module_1 = require("./modules/payments/payments.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -29,6 +31,8 @@ exports.AppModule = AppModule = __decorate([
             health_module_1.HealthModule,
             menu_items_module_1.MenuItemsModule,
             lookup_module_1.LookupsModule,
+            customers_module_1.CustomersModule,
+            payments_module_1.PaymentsModule,
         ],
         controllers: [seed_controller_1.SeedController],
     })

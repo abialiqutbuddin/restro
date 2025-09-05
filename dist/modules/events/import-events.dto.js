@@ -9,17 +9,18 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ImportEventDto = exports.ImportCateringDto = exports.ImportOrderDto = exports.ImportItemDto = exports.EventStatus = exports.CurrencyCode = exports.PricingModeCode = exports.PricingUnitCode = void 0;
-// src/modules/events/dto/import-event.dto.ts
+exports.ImportEventDto = exports.ImportNewCustomerDto = exports.ImportCateringDto = exports.ImportOrderDto = exports.ImportItemDto = exports.EventStatus = exports.CurrencyCode = exports.PricingModeCode = exports.PricingUnitCode = void 0;
+// src/modules/events/dto/import-events.dto.ts
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
-/* ------------ Enums to constrain inputs ------------ */
+/* ---- enums ---- */
 var PricingUnitCode;
 (function (PricingUnitCode) {
     PricingUnitCode["PER_THAAL"] = "per_thaal";
     PricingUnitCode["PER_SIZE"] = "per_size";
     PricingUnitCode["PER_PERSON"] = "per_person";
     PricingUnitCode["PER_TRAY"] = "per_tray";
+    PricingUnitCode["PER_BOX"] = "per_box";
 })(PricingUnitCode || (exports.PricingUnitCode = PricingUnitCode = {}));
 var PricingModeCode;
 (function (PricingModeCode) {
@@ -29,7 +30,6 @@ var PricingModeCode;
 var CurrencyCode;
 (function (CurrencyCode) {
     CurrencyCode["USD"] = "USD";
-    // add more if you actually support them
 })(CurrencyCode || (exports.CurrencyCode = CurrencyCode = {}));
 var EventStatus;
 (function (EventStatus) {
@@ -37,7 +37,7 @@ var EventStatus;
     EventStatus["COMPLETE"] = "complete";
     EventStatus["NEW"] = "new";
 })(EventStatus || (exports.EventStatus = EventStatus = {}));
-/* ------------ Items (menu item always exists) ------------ */
+/* ---- leaf DTOs ---- */
 class ImportItemDto {
 }
 exports.ImportItemDto = ImportItemDto;
@@ -71,10 +71,9 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], ImportItemDto.prototype, "notes", void 0);
-/* ------------ Orders ------------ */
 class ImportOrderDto {
     constructor() {
-        this.items = []; // default to empty array, never undefined
+        this.items = [];
     }
 }
 exports.ImportOrderDto = ImportOrderDto;
@@ -113,7 +112,6 @@ __decorate([
     (0, class_transformer_1.Type)(() => ImportItemDto),
     __metadata("design:type", Array)
 ], ImportOrderDto.prototype, "items", void 0);
-/* ------------ Catering blocks ------------ */
 class ImportCateringDto {
     constructor() {
         this.orders = [];
@@ -141,7 +139,49 @@ __decorate([
     (0, class_transformer_1.Type)(() => ImportOrderDto),
     __metadata("design:type", Array)
 ], ImportCateringDto.prototype, "orders", void 0);
-/* ------------ Root event payload ------------ */
+/* ---- nested customer ---- */
+class ImportNewCustomerDto {
+}
+exports.ImportNewCustomerDto = ImportNewCustomerDto;
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], ImportNewCustomerDto.prototype, "name", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], ImportNewCustomerDto.prototype, "phone", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], ImportNewCustomerDto.prototype, "email", void 0);
+/* ---- class-level validator: exactly one of customerId / newCustomer ---- */
+function AtMostOneCustomer(options) {
+    return function (object, propertyName) {
+        (0, class_validator_1.registerDecorator)({
+            name: 'AtMostOneCustomer',
+            target: object.constructor,
+            propertyName,
+            constraints: [],
+            options,
+            validator: {
+                validate(_, args) {
+                    const o = args.object;
+                    const hasId = typeof o.customerId === 'number';
+                    const hasNew = !!o.newCustomer && typeof o.newCustomer.name === 'string';
+                    // allow none, or exactly one; forbid both
+                    return !(hasId && hasNew);
+                },
+                defaultMessage() {
+                    return 'Provide at most one of customerId or newCustomer';
+                },
+            },
+        });
+    };
+}
+/* ---- ROOT DTO ---- */
 class ImportEventDto {
     constructor() {
         this.caterings = [];
@@ -154,23 +194,30 @@ __decorate([
     __metadata("design:type", String)
 ], ImportEventDto.prototype, "gcalEventId", void 0);
 __decorate([
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], ImportEventDto.prototype, "customerName", void 0);
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_transformer_1.Type)(() => Number),
+    __metadata("design:type", Number)
+], ImportEventDto.prototype, "customerId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], ImportEventDto.prototype, "customerPhone", void 0);
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => ImportNewCustomerDto),
+    __metadata("design:type", ImportNewCustomerDto)
+], ImportEventDto.prototype, "newCustomer", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
+    AtMostOneCustomer({ message: 'Provide atleast one of customerId or newCustomer.name' }),
     __metadata("design:type", String)
-], ImportEventDto.prototype, "customerEmail", void 0);
+], ImportEventDto.prototype, "_customerGuard", void 0);
 __decorate([
     (0, class_validator_1.IsDateString)(),
     __metadata("design:type", String)
 ], ImportEventDto.prototype, "eventDatetime", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], ImportEventDto.prototype, "calendarText", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

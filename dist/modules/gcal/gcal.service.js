@@ -33,16 +33,19 @@ let GcalService = class GcalService {
             scope: ['https://www.googleapis.com/auth/calendar.readonly'],
         });
     }
-    // ⬇️ Return proper type from google-auth-library
     async handleOAuthCallback(code) {
         const { tokens } = await this.oauth2.getToken(code);
-        return tokens; // tokens.refresh_token is what you persist
+        return tokens;
     }
     async listRange(params) {
         const calendarId = params.calendarId || 'primary';
         const maxResults = params.maxPerPage ?? 250;
         const timeMin = this.toRfc3339(params.start, 'start');
         const timeMax = this.toRfc3339(params.end, 'end');
+        // Titles to ignore (lowercased, trimmed)
+        const ignoredTitles = new Set([
+            'barbq village marketing meeting',
+        ]);
         const all = [];
         let pageToken;
         do {
@@ -57,10 +60,14 @@ let GcalService = class GcalService {
                 timeZone: params.timeZone,
             });
             for (const ev of data.items ?? []) {
+                const title = (ev.summary ?? '').trim();
+                // ⛔️ Skip ignored titles (case-insensitive)
+                if (ignoredTitles.has(title.toLowerCase()))
+                    continue;
                 all.push({
                     eventId: ev.id ?? null,
                     status: ev.status ?? null,
-                    summary: ev.summary ?? '',
+                    summary: title,
                     description: ev.description ?? '',
                     start: ev.start,
                     end: ev.end,

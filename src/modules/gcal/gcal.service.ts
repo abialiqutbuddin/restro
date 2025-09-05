@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { google, calendar_v3 } from 'googleapis';
-import { Credentials } from 'google-auth-library'; // ✅ add this
+import { Credentials } from 'google-auth-library';
 
 type ISO = string;
 
@@ -29,10 +29,9 @@ export class GcalService {
     });
   }
 
-  // ⬇️ Return proper type from google-auth-library
   async handleOAuthCallback(code: string): Promise<Credentials> {
     const { tokens } = await this.oauth2.getToken(code);
-    return tokens; // tokens.refresh_token is what you persist
+    return tokens;
   }
 
   async listRange(params: {
@@ -58,6 +57,11 @@ export class GcalService {
     const maxResults = params.maxPerPage ?? 250;
     const timeMin = this.toRfc3339(params.start, 'start');
     const timeMax = this.toRfc3339(params.end, 'end');
+
+    // Titles to ignore (lowercased, trimmed)
+    const ignoredTitles = new Set<string>([
+      'barbq village marketing meeting',
+    ]);
 
     const all: Array<{
       eventId?: string | null;
@@ -89,10 +93,14 @@ export class GcalService {
         } as calendar_v3.Params$Resource$Events$List);
 
       for (const ev of data.items ?? []) {
+        const title = (ev.summary ?? '').trim();
+        // ⛔️ Skip ignored titles (case-insensitive)
+        if (ignoredTitles.has(title.toLowerCase())) continue;
+
         all.push({
           eventId: ev.id ?? null,
           status: ev.status ?? null,
-          summary: ev.summary ?? '',
+          summary: title,
           description: ev.description ?? '',
           start: ev.start,
           end: ev.end,

@@ -1,31 +1,11 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { IsArray, IsDateString, IsEmail, IsNumber, IsOptional, IsString, ArrayNotEmpty } from 'class-validator';
 import { EventsService } from './events.service';
 import { ImportEventDto } from './import-events.dto';
-
-class CreateEventDto {
-  @IsString() customerName!: string;
-  @IsDateString() eventDate!: string;
-
-  @IsOptional() @IsString() customerPhone?: string;
-  @IsOptional() @IsEmail() customerEmail?: string;
-  @IsOptional() @IsString() venue?: string;
-  @IsOptional() @IsString() notes?: string;
-  @IsOptional() @IsString() calendarText?: string;
-
-  @IsOptional() @IsNumber() deliveryFee?: number;
-  @IsOptional() @IsNumber() serviceFee?: number;
-
-  @IsOptional() @IsNumber() headcountEst?: number;
-  @IsOptional() isDelivery?: boolean;
-
-  @IsOptional() @IsString() status?: string;         
-  @IsOptional() @IsString() gcalEventId?: string;
-}
+import { CreateEventDto } from './dto/create-event.dto';
 
 class CheckEventsDto {
   @IsArray() @ArrayNotEmpty()
-  @IsString({ each: true })
   ids!: string[];
 }
 
@@ -60,7 +40,7 @@ export class EventsController {
     return this.svc.getByGcalId(id);
   }
 
-    /** GET /api/events/:id → single row (no deep relations) */
+  /** GET /api/events/:id → single row (no deep relations) */
   @Get(':id')
   getById(@Param('id', ParseIntPipe) id: number) {
     return this.svc.getById(id);
@@ -72,9 +52,14 @@ export class EventsController {
     return this.svc.getTreeById(id);
   }
 
-    @Get(':id/view')
+  @Get(':id/view')
   getEventView(@Param('id') id: string) {
     return this.svc.getEventView(id);
   }
-  
+
+  @Delete('by-gcal/:gcalId')
+  async deleteByGcal(@Param('gcalId') gcalId: string) {
+    return this.svc.deleteByGcalId(gcalId);
+  }
+
 }

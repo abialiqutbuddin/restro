@@ -13,70 +13,138 @@ exports.EventsService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../database/prisma.service");
+const customers_service_1 = require("../customers/customers.service");
+const asNum = (v) => {
+    if (v == null)
+        return null;
+    if (typeof v === 'bigint')
+        return Number(v);
+    if (v?.constructor?.name === 'Decimal')
+        return Number(v);
+    if (typeof v === 'number')
+        return v;
+    const n = Number(v);
+    return Number.isNaN(n) ? null : n;
+};
 let EventsService = class EventsService {
-    constructor(prisma) {
+    constructor(prisma, customers) {
         this.prisma = prisma;
+        this.customers = customers;
     }
-    /** List events with full nested tree */
+    /** List events including customer + nested items */
     list() {
         return this.prisma.events.findMany({
             orderBy: { event_datetime: 'desc' },
             include: {
+                customer: true,
                 event_caterings: {
                     include: {
                         event_catering_orders: {
-                            include: {
-                                event_catering_menu_items: true,
-                            },
+                            include: { event_catering_menu_items: true },
                         },
                     },
                 },
             },
         });
     }
-    /** Create event (camelCase -> snake_case) */
-    async create(data) {
+    /** Create event: connect by id (with optional patch) OR create new customer */
+    async create(dto) {
+        // Inline patch if an existing customer id was provided
+        const patchFromInline = dto.customerId
+            ? {
+                name: dto.customerName,
+                email: dto.customerEmail ?? undefined,
+                phone: dto.customerPhone ?? undefined,
+            }
+            : undefined;
+        const customerRel = await this.customers.resolveForEvent({
+            customerId: dto.customerId ?? null,
+            newCustomer: dto.customerId
+                ? patchFromInline
+                : dto.newCustomer
+                    ? {
+                        name: dto.newCustomer.name,
+                        email: dto.newCustomer.email ?? null,
+                        phone: dto.newCustomer.phone ?? null,
+                    }
+                    : dto.customerName
+                        ? {
+                            name: dto.customerName,
+                            email: dto.customerEmail ?? null,
+                            phone: dto.customerPhone ?? null,
+                        }
+                        : null,
+        });
+        const noCustomerProvided = !customerRel;
         return this.prisma.events.create({
             data: {
-                customer_name: data.customerName,
-                event_datetime: typeof data.eventDate === 'string'
-                    ? new Date(data.eventDate)
-                    : data.eventDate,
-                customer_phone: data.customerPhone,
-                customer_email: data.customerEmail,
-                venue: data.venue,
-                notes: data.notes,
-                delivery_charges: data.deliveryFee !== undefined ? new client_1.Prisma.Decimal(data.deliveryFee) : undefined,
-                service_charges: data.serviceFee !== undefined ? new client_1.Prisma.Decimal(data.serviceFee) : undefined,
-                headcount_est: data.headcountEst,
-                is_delivery: data.isDelivery ?? false,
-                status: data.status ?? 'incomplete', // default if you want
-                gcalEventId: data.gcalEventId ?? null, // 👈 store GCal id
-                // order_total: compute later
+                gcalEventId: dto.gcalEventId ?? null,
+                event_datetime: new Date(dto.eventDate),
+                venue: dto.venue ?? null,
+                notes: dto.notes ?? null,
+                calender_text: dto.calendarText ?? null,
+                is_delivery: dto.isDelivery ?? false,
+                delivery_charges: dto.deliveryFee != null ? new client_1.Prisma.Decimal(dto.deliveryFee) : null,
+                service_charges: dto.serviceFee != null ? new client_1.Prisma.Decimal(dto.serviceFee) : null,
+                headcount_est: dto.headcountEst ?? null,
+                // ✅ Force incomplete if no customer
+                status: noCustomerProvided ? 'incomplete' : dto.status ?? 'incomplete',
+                // 👇 Only include relation if we actually have one
+                ...(customerRel ? { customer: customerRel } : {}),
             },
+            include: { customer: true },
         });
     }
-    /** Check many Google event IDs against DB presence + status */
+    /** Check many Google event IDs against DB */
     async checkByGcalIds(ids) {
         if (!ids.length)
             return {};
-        const rows = await this.prisma.events.findMany({
+        // 1) Pull events
+        const events = await this.prisma.events.findMany({
             where: { gcalEventId: { in: ids } },
-            select: { gcalEventId: true, status: true },
+            select: {
+                gcalEventId: true,
+                status: true,
+                event_datetime: true,
+            },
         });
-        const found = new Map(rows.map(r => [r.gcalEventId, { exists: true, status: r.status || 'complete' }]));
+        // 2) Pull all payments (newest first, so first row per id is latest)
+        const payments = await this.prisma.event_payments.findMany({
+            where: { event_gcal_id: { in: ids } },
+            select: {
+                event_gcal_id: true,
+                status: true,
+            },
+            orderBy: { created_at: 'desc' },
+        });
+        // 3) Collapse to latest status per gcal id
+        const latestPayByGcal = new Map();
+        for (const p of payments) {
+            if (!p.event_gcal_id)
+                continue;
+            if (!latestPayByGcal.has(p.event_gcal_id)) {
+                latestPayByGcal.set(p.event_gcal_id, p.status ?? 'pending');
+            }
+        }
+        // 4) Build result
         const result = {};
         for (const id of ids) {
-            const hit = found.get(id);
-            result[id] = hit ? hit : { exists: false };
+            const ev = events.find(e => e.gcalEventId === id);
+            result[id] = {
+                exists: !!ev,
+                status: ev?.status ?? undefined,
+                paymentStatus: latestPayByGcal.get(id) ?? 'pending',
+                orderDate: ev?.event_datetime ? ev.event_datetime.toISOString() : undefined,
+            };
         }
         return result;
     }
-    /** Optional: single lookup */
+    /** Single lookup by gcal */
     async getByGcalId(id) {
         return this.prisma.events.findFirst({
             where: { gcalEventId: id },
             include: {
+                customer: true,
                 event_caterings: {
                     include: {
                         event_catering_orders: { include: { event_catering_menu_items: true } },
@@ -85,111 +153,145 @@ let EventsService = class EventsService {
             },
         });
     }
-    /**
-     * Upsert event (by gcalEventId if provided) and create nested caterings->orders->items
-     * Everything happens inside a single transaction.
-     */
+    /** Import nested event tree (short tx; no connectOrCreate on email/phone) */
+    // src/modules/events/events.service.ts (inside EventsService)
     async importEventTree(dto) {
         return this.prisma.$transaction(async (tx) => {
-            // 1) Upsert event by gcalEventId (if provided), else create
+            // ---------- A) Resolve customer relation on the SAME tx client ----------
+            let customerRel = null;
+            if (dto.customerId != null) {
+                // connect to existing
+                customerRel = { connect: { id: BigInt(dto.customerId) } };
+            }
+            else if (dto.newCustomer) {
+                const name = (dto.newCustomer.name ?? '').trim();
+                const email = (dto.newCustomer.email ?? undefined) || undefined;
+                const phone = (dto.newCustomer.phone ?? undefined) || undefined;
+                if (email) {
+                    customerRel = {
+                        connectOrCreate: {
+                            where: { email },
+                            create: { name: name || email, email, phone: phone ?? null },
+                        },
+                    };
+                }
+                else if (phone) {
+                    customerRel = {
+                        connectOrCreate: {
+                            where: { phone },
+                            create: { name: name || phone, phone, email: email ?? null },
+                        },
+                    };
+                }
+                else if (name) {
+                    // name only -> we’ll create inside the tx and then connect
+                    customerRel = { __needsCreateByName: { name } };
+                }
+                else {
+                    // newCustomer provided but empty -> treat as no customer
+                    customerRel = null;
+                }
+            }
+            // else: no customer info at all -> leave as null
+            // If we need a name-only customer, create it now (inside the same tx)
+            let finalCustomerRel = null;
+            if (customerRel && '__needsCreateByName' in customerRel) {
+                const created = await tx.customers.create({
+                    data: { name: customerRel.__needsCreateByName.name, email: null, phone: null },
+                    select: { id: true },
+                });
+                finalCustomerRel = { connect: { id: created.id } };
+            }
+            else {
+                finalCustomerRel = customerRel;
+            }
+            // ---------- B) Build base event payload (omit customer if none) ----------
             const baseEventData = {
                 gcalEventId: dto.gcalEventId ?? null,
-                customer_name: dto.customerName,
-                customer_phone: dto.customerPhone ?? null,
-                customer_email: dto.customerEmail ?? null,
                 event_datetime: new Date(dto.eventDatetime),
                 venue: dto.venue ?? null,
                 notes: dto.notes ?? null,
+                calender_text: dto.calendarText ?? null,
                 is_delivery: dto.isDelivery ?? false,
                 delivery_charges: dto.deliveryCharges != null ? new client_1.Prisma.Decimal(dto.deliveryCharges) : null,
                 service_charges: dto.serviceCharges != null ? new client_1.Prisma.Decimal(dto.serviceCharges) : null,
                 headcount_est: dto.headcountEst ?? null,
-                status: dto.status ?? 'incomplete',
+                status: finalCustomerRel == null ? 'incomplete' : dto.status ?? 'incomplete',
+                ...(finalCustomerRel ? { customer: finalCustomerRel } : {}), // <-- key bit
             };
-            let eventRow;
-            if (dto.gcalEventId) {
-                eventRow = await tx.events.upsert({
+            // ---------- C) Create / Upsert event ----------
+            const eventRow = dto.gcalEventId
+                ? await tx.events.upsert({
                     where: { gcalEventId: dto.gcalEventId },
                     create: baseEventData,
-                    update: {
-                        // you may want to update customer/venue on re-import
-                        customer_name: dto.customerName,
-                        customer_phone: dto.customerPhone ?? null,
-                        customer_email: dto.customerEmail ?? null,
-                        event_datetime: new Date(dto.eventDatetime),
-                        venue: dto.venue ?? null,
-                        notes: dto.notes ?? null,
-                        is_delivery: dto.isDelivery ?? false,
-                        delivery_charges: dto.deliveryCharges != null ? new client_1.Prisma.Decimal(dto.deliveryCharges) : null,
-                        service_charges: dto.serviceCharges != null ? new client_1.Prisma.Decimal(dto.serviceCharges) : null,
-                        headcount_est: dto.headcountEst ?? null,
-                        status: dto.status ?? undefined,
-                    },
-                });
-            }
-            else {
-                eventRow = await tx.events.create({ data: baseEventData });
-            }
-            // 2) Create nested caterings -> orders -> items
+                    update: { ...baseEventData, status: dto.status ?? undefined },
+                })
+                : await tx.events.create({ data: baseEventData });
+            // ---------- D) Create caterings, orders, and items (batch) ----------
             let itemsSubtotal = new client_1.Prisma.Decimal(0);
-            const toOptBigInt = (n) => (typeof n === 'number' ? BigInt(n) : undefined);
             for (const cat of dto.caterings) {
                 const catering = await tx.event_caterings.create({
                     data: {
                         event_id: eventRow.id,
-                        category_id: BigInt(cat.categoryId), // optional, but consistent with BigInt PKs
+                        category_id: BigInt(cat.categoryId),
                         title_override: cat.titleOverride ?? null,
                         instructions: cat.instructions ?? null,
                     },
+                    select: { id: true },
                 });
-                for (const [orderIndex, ord] of cat.orders.entries()) {
-                    const lineSubtotal = new client_1.Prisma.Decimal(ord.qty).mul(new client_1.Prisma.Decimal(ord.unitPrice));
+                for (const ord of cat.orders) {
+                    const qtyDec = new client_1.Prisma.Decimal(ord.qty);
+                    const unitPriceDec = new client_1.Prisma.Decimal(ord.unitPrice);
+                    const lineSubtotal = qtyDec.mul(unitPriceDec);
                     itemsSubtotal = itemsSubtotal.add(lineSubtotal);
                     const order = await tx.event_catering_orders.create({
                         data: {
                             event_catering_id: catering.id,
                             unit_code: ord.unitCode,
                             pricing_mode: ord.pricingMode,
-                            qty: new client_1.Prisma.Decimal(ord.qty),
-                            unit_price: new client_1.Prisma.Decimal(ord.unitPrice),
+                            qty: qtyDec,
+                            unit_price: unitPriceDec,
                             currency: ord.currency,
                             line_subtotal: lineSubtotal,
                             calc_notes: ord.calcNotes ?? null,
                         },
+                        select: { id: true },
                     });
                     if (ord.items?.length) {
-                        for (const [i, it] of ord.items.entries()) {
-                            await tx.event_catering_menu_items.create({
-                                data: {
-                                    event_catering_order_id: order.id,
-                                    position_number: i + 1, // <- give each item a position
-                                    item_id: BigInt(it.itemId), // <- cast to bigint
-                                    // size_id is optional; only include if provided
-                                    ...(it.sizeId !== undefined ? { size_id: BigInt(it.sizeId) } : {}),
-                                    qty_per_unit: it.qtyPerUnit != null
-                                        ? new client_1.Prisma.Decimal(it.qtyPerUnit)
-                                        : new client_1.Prisma.Decimal(1),
-                                    component_price: it.componentPrice != null
-                                        ? new client_1.Prisma.Decimal(it.componentPrice)
-                                        : null,
-                                    component_subtotal_for_one_unit: it.qtyPerUnit != null && it.componentPrice != null
-                                        ? new client_1.Prisma.Decimal(it.qtyPerUnit).mul(new client_1.Prisma.Decimal(it.componentPrice))
-                                        : null,
-                                    notes: it.notes ?? null,
-                                },
+                        const rows = ord.items.map((it, i) => {
+                            const qtyPerUnitDec = it.qtyPerUnit != null
+                                ? new client_1.Prisma.Decimal(it.qtyPerUnit)
+                                : new client_1.Prisma.Decimal(1);
+                            const componentPriceDec = it.componentPrice != null ? new client_1.Prisma.Decimal(it.componentPrice) : null;
+                            return {
+                                event_catering_order_id: order.id,
+                                position_number: i + 1,
+                                item_id: BigInt(it.itemId),
+                                size_id: it.sizeId !== undefined ? BigInt(it.sizeId) : null,
+                                qty_per_unit: qtyPerUnitDec,
+                                component_price: componentPriceDec,
+                                component_subtotal_for_one_unit: componentPriceDec ? qtyPerUnitDec.mul(componentPriceDec) : null,
+                                notes: it.notes ?? null,
+                            };
+                        });
+                        const CHUNK = 500;
+                        for (let i = 0; i < rows.length; i += CHUNK) {
+                            await tx.event_catering_menu_items.createMany({
+                                data: rows.slice(i, i + CHUNK),
                             });
                         }
                     }
                 }
             }
-            // 3) Update event.order_total = itemsSubtotal + delivery + service
+            // ---------- E) Compute totals & return with includes ----------
             const delivery = eventRow.delivery_charges ?? new client_1.Prisma.Decimal(0);
             const service = eventRow.service_charges ?? new client_1.Prisma.Decimal(0);
             const orderTotal = itemsSubtotal.add(delivery).add(service);
-            const updated = await tx.events.update({
+            return tx.events.update({
                 where: { id: eventRow.id },
                 data: { order_total: orderTotal },
                 include: {
+                    customer: true,
                     event_caterings: {
                         include: {
                             event_catering_orders: { include: { event_catering_menu_items: true } },
@@ -197,12 +299,147 @@ let EventsService = class EventsService {
                     },
                 },
             });
-            return updated;
+        }, {
+            timeout: 20_000,
+            maxWait: 5_000,
         });
+    }
+    /** Flat fetch (with customer) */
+    async getById(id) {
+        const row = await this.prisma.events.findUnique({
+            where: { id: BigInt(id) },
+            include: { customer: true },
+        });
+        if (!row)
+            throw new common_1.NotFoundException(`Event ${id} not found`);
+        return row;
+    }
+    /** Full nested tree */
+    async getTreeById(id) {
+        const row = await this.prisma.events.findUnique({
+            where: { id: BigInt(id) },
+            include: {
+                customer: true,
+                event_caterings: {
+                    orderBy: { id: 'asc' },
+                    include: {
+                        event_catering_orders: {
+                            orderBy: { id: 'asc' },
+                            include: {
+                                unit: true,
+                                event_catering_menu_items: {
+                                    orderBy: { position_number: 'asc' },
+                                    include: { item: true, size: true },
+                                },
+                            },
+                        },
+                        category: true,
+                    },
+                },
+            },
+        });
+        if (!row)
+            throw new common_1.NotFoundException(`Event ${id} not found`);
+        return row;
+    }
+    /** Summary view by gcal id */
+    async getEventView(gcalId) {
+        const ev = await this.prisma.events.findUnique({
+            where: { gcalEventId: gcalId },
+            include: {
+                customer: true,
+                event_caterings: {
+                    include: {
+                        category: true,
+                        event_catering_orders: {
+                            include: {
+                                unit: true,
+                                event_catering_menu_items: { include: { item: true, size: true } },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        if (!ev)
+            throw new common_1.NotFoundException(`Event ${gcalId} not found`);
+        let itemsSubtotal = 0;
+        const caterings = ev.event_caterings.map((c) => {
+            const orders = c.event_catering_orders.map((o) => {
+                const qty = asNum(o.qty) ?? 0;
+                const unitPrice = asNum(o.unit_price) ?? 0;
+                const lineSubtotal = qty * unitPrice;
+                itemsSubtotal += lineSubtotal;
+                const items = o.event_catering_menu_items.map((mi) => {
+                    const qtyPerUnit = asNum(mi.qty_per_unit) ?? 1;
+                    const componentPrice = asNum(mi.component_price);
+                    const componentSubtotalForOne = componentPrice == null ? null : qtyPerUnit * componentPrice;
+                    return {
+                        id: Number(mi.id),
+                        position: mi.position_number,
+                        item: mi.item && { id: Number(mi.item.id), name: mi.item.name },
+                        size: mi.size ? { id: Number(mi.size.id), name: mi.size.name } : null,
+                        qtyPerUnit,
+                        componentPrice,
+                        componentSubtotalForOne,
+                        notes: mi.notes,
+                    };
+                });
+                return {
+                    id: Number(o.id),
+                    unit: { code: o.unit.code, label: o.unit.label, qtyLabel: o.unit.qty_label },
+                    pricingMode: o.pricing_mode,
+                    qty,
+                    unitPrice,
+                    currency: o.currency,
+                    lineSubtotal,
+                    calcNotes: o.calc_notes,
+                    items,
+                };
+            });
+            const subtotal = orders.reduce((s, x) => s + x.lineSubtotal, 0);
+            return {
+                id: Number(c.id),
+                category: c.category && { id: Number(c.category.id), name: c.category.name, slug: c.category.slug },
+                titleOverride: c.title_override,
+                instructions: c.instructions,
+                subtotal,
+                orders,
+            };
+        });
+        const delivery = asNum(ev.delivery_charges) ?? 0;
+        const service = asNum(ev.service_charges) ?? 0;
+        const grandTotal = itemsSubtotal + delivery + service;
+        return {
+            id: Number(ev.id),
+            gcalEventId: ev.gcalEventId,
+            customer: ev.customer
+                ? { id: Number(ev.customer.id), name: ev.customer.name, email: ev.customer.email, phone: ev.customer.phone }
+                : null,
+            eventDate: ev.event_datetime,
+            venue: ev.venue,
+            notes: ev.notes,
+            calendarText: ev.calender_text,
+            isDelivery: !!ev.is_delivery,
+            status: ev.status,
+            totals: { itemsSubtotal, delivery, service, grandTotal },
+            caterings,
+        };
+    }
+    async deleteByGcalId(gcalId) {
+        const ev = await this.prisma.events.findUnique({
+            where: { gcalEventId: gcalId },
+            select: { id: true },
+        });
+        if (!ev)
+            throw new common_1.NotFoundException(`Event with gcalEventId "${gcalId}" not found`);
+        await this.prisma.events.delete({ where: { id: ev.id } });
+        return { success: true, gcalEventId: gcalId, id: ev.id };
     }
 };
 exports.EventsService = EventsService;
 exports.EventsService = EventsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        customers_service_1.CustomersService])
 ], EventsService);

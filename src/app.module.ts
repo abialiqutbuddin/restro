@@ -7,6 +7,8 @@ import { GcalModule } from './modules/gcal/gcal.module';
 import { MenuItemsModule } from './modules/menu-items/menu-items.module';
 import { LookupsModule } from './modules/lookups/lookup.module';
 import { SeedController } from './seed/seed.controller';
+import { CustomersModule } from './modules/customers/customers.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { SeedController } from './seed/seed.controller';
     HealthModule,
     MenuItemsModule,
     LookupsModule,
+    CustomersModule,
+    PaymentsModule,
   ],
   controllers: [SeedController],
 })

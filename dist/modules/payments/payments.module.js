@@ -6,19 +6,19 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EventsModule = void 0;
+exports.PaymentsModule = void 0;
+// src/modules/payments/payments.module.ts
 const common_1 = require("@nestjs/common");
-const events_service_1 = require("./events.service");
-const events_controller_1 = require("./events.controller");
+const payments_controller_1 = require("./payments.controller");
+const payments_service_1 = require("./payments.service");
 const prisma_service_1 = require("../../database/prisma.service");
-const customers_module_1 = require("../customers/customers.module");
-let EventsModule = class EventsModule {
+let PaymentsModule = class PaymentsModule {
 };
-exports.EventsModule = EventsModule;
-exports.EventsModule = EventsModule = __decorate([
+exports.PaymentsModule = PaymentsModule;
+exports.PaymentsModule = PaymentsModule = __decorate([
     (0, common_1.Module)({
-        imports: [customers_module_1.CustomersModule],
-        controllers: [events_controller_1.EventsController],
-        providers: [events_service_1.EventsService, prisma_service_1.PrismaService],
+        controllers: [payments_controller_1.PaymentsController],
+        providers: [payments_service_1.PaymentsService, prisma_service_1.PrismaService],
+        exports: [payments_service_1.PaymentsService],
     })
-], EventsModule);
+], PaymentsModule);

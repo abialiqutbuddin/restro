@@ -17,62 +17,12 @@ const common_1 = require("@nestjs/common");
 const class_validator_1 = require("class-validator");
 const events_service_1 = require("./events.service");
 const import_events_dto_1 = require("./import-events.dto");
-class CreateEventDto {
-}
-__decorate([
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], CreateEventDto.prototype, "customerName", void 0);
-__decorate([
-    (0, class_validator_1.IsDateString)(),
-    __metadata("design:type", String)
-], CreateEventDto.prototype, "eventDate", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], CreateEventDto.prototype, "customerPhone", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsEmail)(),
-    __metadata("design:type", String)
-], CreateEventDto.prototype, "customerEmail", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], CreateEventDto.prototype, "venue", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], CreateEventDto.prototype, "notes", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumber)(),
-    __metadata("design:type", Number)
-], CreateEventDto.prototype, "deliveryFee", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumber)(),
-    __metadata("design:type", Number)
-], CreateEventDto.prototype, "serviceFee", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], CreateEventDto.prototype, "status", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], CreateEventDto.prototype, "gcalEventId", void 0);
+const create_event_dto_1 = require("./dto/create-event.dto");
 class CheckEventsDto {
 }
 __decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ArrayNotEmpty)(),
-    (0, class_validator_1.IsString)({ each: true }),
     __metadata("design:type", Array)
 ], CheckEventsDto.prototype, "ids", void 0);
 let EventsController = class EventsController {
@@ -96,6 +46,20 @@ let EventsController = class EventsController {
     getByGcal(id) {
         return this.svc.getByGcalId(id);
     }
+    /** GET /api/events/:id → single row (no deep relations) */
+    getById(id) {
+        return this.svc.getById(id);
+    }
+    /** GET /api/events/:id/tree → full nested tree */
+    getTreeById(id) {
+        return this.svc.getTreeById(id);
+    }
+    getEventView(id) {
+        return this.svc.getEventView(id);
+    }
+    async deleteByGcal(gcalId) {
+        return this.svc.deleteByGcalId(gcalId);
+    }
 };
 exports.EventsController = EventsController;
 __decorate([
@@ -108,7 +72,7 @@ __decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [CreateEventDto]),
+    __metadata("design:paramtypes", [create_event_dto_1.CreateEventDto]),
     __metadata("design:returntype", void 0)
 ], EventsController.prototype, "create", null);
 __decorate([
@@ -132,6 +96,34 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], EventsController.prototype, "getByGcal", null);
+__decorate([
+    (0, common_1.Get)(':id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], EventsController.prototype, "getById", null);
+__decorate([
+    (0, common_1.Get)(':id/tree'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], EventsController.prototype, "getTreeById", null);
+__decorate([
+    (0, common_1.Get)(':id/view'),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], EventsController.prototype, "getEventView", null);
+__decorate([
+    (0, common_1.Delete)('by-gcal/:gcalId'),
+    __param(0, (0, common_1.Param)('gcalId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], EventsController.prototype, "deleteByGcal", null);
 exports.EventsController = EventsController = __decorate([
     (0, common_1.Controller)('events'),
     __metadata("design:paramtypes", [events_service_1.EventsService])

@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,7 +9,49 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// ---------- Lookups ----------
+enum PaymentMethod {
+  cash
+  cheque
+  credit
+  others
+}
+
+// Optional: if you want explicit statuses (authorized, captured, refunded)
+enum PaymentStatus {
+  pending
+  succeeded
+  failed
+  refunded
+}
+
+model customers {
+  id            BigInt   @id @default(autoincrement())
+  name          String   @db.VarChar(150)
+  email String? @db.VarChar(255) // <- no @unique
+  phone String? @db.VarChar(30)  // <- no @unique
+  default_venue String?  @db.VarChar(200)
+  notes         String?  @db.Text
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // relations
+  events events[]
+  @@index([email])
+  @@index([phone])
+}
+
+model users {
+  id         BigInt   @id @default(autoincrement())
+  email      String   @unique @db.VarChar(150)
+  password   String   @db.VarChar(255)
+  name       String?  @db.VarChar(150)
+  role       String   @default("user") @db.VarChar(50)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+/// ---------- Lookups (unchanged) ----------
 model category {
   id         BigInt   @id @default(autoincrement())
   name       String   @db.VarChar(100)
@@ -16,7 +60,6 @@ model category {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  // relations
   category_units  category_unit[]
   event_caterings event_caterings[]
 }
@@ -29,7 +72,6 @@ model menu_items {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  // relations
   event_catering_menu_items event_catering_menu_items[]
 }
 
@@ -41,24 +83,21 @@ model sizes {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  // relations
   event_catering_menu_items event_catering_menu_items[]
 }
 
 model pricing_unit {
-  code       String   @id @db.VarChar(50) // e.g. per_thaal, per_size, per_person, per_tray
+  code       String   @id @db.VarChar(50)
   label      String   @db.VarChar(100)
   qty_label  String   @db.VarChar(50)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  // relations
   category_units        category_unit[]
   event_catering_orders event_catering_orders[]
 }
 
 model category_unit {
-  // junction: which units are valid for a category
   category_id  BigInt
   unit_code    String       @db.VarChar(50)
   hint         String?      @db.VarChar(255)
@@ -67,17 +106,14 @@ model category_unit {
   category     category     @relation(fields: [category_id], references: [id], onDelete: Cascade)
   pricing_unit pricing_unit @relation(fields: [unit_code], references: [code], onDelete: Cascade)
 
-  // PK & FKs
   @@id([category_id, unit_code])
 }
 
 /// ---------- Core ----------
 model events {
   id               BigInt   @id @default(autoincrement())
-  gcalEventId   String?  @unique(map: "uniq_events_gcal_event_id")
-  customer_name    String   @db.VarChar(150)
-  customer_phone   String?  @db.VarChar(40)
-  customer_email   String?  @db.VarChar(150)
+  gcalEventId      String?  @unique(map: "uniq_events_gcal_event_id")
+  customer_id      BigInt?
   event_datetime   DateTime
   venue            String?  @db.VarChar(200)
   delivery_charges Decimal? @db.Decimal(12, 2)
@@ -90,9 +126,35 @@ model events {
   status           String?  @db.VarChar(50)
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
+  discount         Decimal? @db.Decimal(12, 2)
 
-  // relations
+  // NEW relation
+  customer customers? @relation(fields: [customer_id], references: [id], onDelete: SetNull)
   event_caterings event_caterings[]
+  payments         event_payments[]       // <— relation
+
+
+  @@index([customer_id])
+}
+
+// --- event_payments: one row per payment/attempt ---
+model event_payments {
+  id             BigInt        @id @default(autoincrement())
+  event_gcal_id  String
+  method         PaymentMethod
+  amount         Decimal        @db.Decimal(12, 2)
+  currency       String         @db.Char(3)
+  paid_at        DateTime       @default(now())
+  status         PaymentStatus  @default(succeeded)
+  square_id      String?
+  notes          String?
+  created_at     DateTime       @default(now())
+  updated_at     DateTime       @updatedAt
+
+  // relation to events via UNIQUE gcalEventId
+  event events @relation(fields: [event_gcal_id], references: [gcalEventId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([event_gcal_id])
 }
 
 model event_caterings {
@@ -104,11 +166,9 @@ model event_caterings {
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
 
-  // FKs
   event    events   @relation(fields: [event_id], references: [id], onDelete: Cascade)
   category category @relation(fields: [category_id], references: [id], onDelete: Restrict)
 
-  // relations
   event_catering_orders event_catering_orders[]
 
   @@index([event_id])
@@ -118,8 +178,8 @@ model event_caterings {
 model event_catering_orders {
   id                BigInt   @id @default(autoincrement())
   event_catering_id BigInt
-  unit_code         String   @db.VarChar(50) // FK to pricing_unit
-  pricing_mode      String   @db.VarChar(50) // per_unit_manual | per_unit_from_items
+  unit_code         String   @db.VarChar(50)
+  pricing_mode      String   @db.VarChar(50)
   qty               Decimal  @db.Decimal(12, 2)
   unit_price        Decimal  @db.Decimal(12, 2)
   currency          String   @db.Char(3)
@@ -128,11 +188,9 @@ model event_catering_orders {
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
 
-  // FKs
   event_catering event_caterings @relation(fields: [event_catering_id], references: [id], onDelete: Cascade)
   unit           pricing_unit    @relation(fields: [unit_code], references: [code], onDelete: Restrict)
 
-  // relations
   event_catering_menu_items event_catering_menu_items[]
 
   @@index([event_catering_id])
@@ -152,7 +210,6 @@ model event_catering_menu_items {
   created_at                      DateTime @default(now())
   updated_at                      DateTime @updatedAt
 
-  // FKs
   order event_catering_orders @relation(fields: [event_catering_order_id], references: [id], onDelete: Cascade)
   size  sizes?                @relation(fields: [size_id], references: [id], onDelete: SetNull)
   item  menu_items            @relation(fields: [item_id], references: [id], onDelete: Restrict)
