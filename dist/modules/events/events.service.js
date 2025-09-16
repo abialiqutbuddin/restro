@@ -87,9 +87,7 @@ let EventsService = class EventsService {
                 delivery_charges: dto.deliveryFee != null ? new client_1.Prisma.Decimal(dto.deliveryFee) : null,
                 service_charges: dto.serviceFee != null ? new client_1.Prisma.Decimal(dto.serviceFee) : null,
                 headcount_est: dto.headcountEst ?? null,
-                // ✅ Force incomplete if no customer
-                status: noCustomerProvided ? 'incomplete' : dto.status ?? 'incomplete',
-                // 👇 Only include relation if we actually have one
+                status: 'incomplete',
                 ...(customerRel ? { customer: customerRel } : {}),
             },
             include: { customer: true },
@@ -157,54 +155,72 @@ let EventsService = class EventsService {
     // src/modules/events/events.service.ts (inside EventsService)
     async importEventTree(dto) {
         return this.prisma.$transaction(async (tx) => {
-            // ---------- A) Resolve customer relation on the SAME tx client ----------
-            let customerRel = null;
+            let finalCustomerRel = null;
             if (dto.customerId != null) {
-                // connect to existing
-                customerRel = { connect: { id: BigInt(dto.customerId) } };
+                // 1) Caller gave an explicit id → just connect
+                finalCustomerRel = { connect: { id: BigInt(dto.customerId) } };
             }
             else if (dto.newCustomer) {
-                const name = (dto.newCustomer.name ?? '').trim();
-                const email = (dto.newCustomer.email ?? undefined) || undefined;
-                const phone = (dto.newCustomer.phone ?? undefined) || undefined;
-                if (email) {
-                    customerRel = {
-                        connectOrCreate: {
-                            where: { email },
-                            create: { name: name || email, email, phone: phone ?? null },
+                // 2) New customer payload → resolve by email/phone/name (non-unique) then connect by id
+                const nameRaw = (dto.newCustomer.name ?? '').trim();
+                const emailRaw = dto.newCustomer.email?.trim() || undefined;
+                const phoneRaw = dto.newCustomer.phone?.trim() || undefined;
+                // Helper: prefer most-recent match when duplicates exist
+                const pickOneBy = async (where) => {
+                    return tx.customers.findFirst({
+                        where,
+                        orderBy: { created_at: 'desc' },
+                        select: { id: true },
+                    });
+                };
+                let found = null;
+                // Resolve precedence: email → phone → (name exact)
+                if (emailRaw) {
+                    found = await pickOneBy({ email: emailRaw });
+                }
+                if (!found && phoneRaw) {
+                    found = await pickOneBy({ phone: phoneRaw });
+                }
+                if (!found && nameRaw) {
+                    // If you expect many identical names, you can tighten this to { name: nameRaw, email: null, phone: null }
+                    found = await pickOneBy({ name: nameRaw });
+                }
+                // Create if still not found
+                if (!found) {
+                    const created = await tx.customers.create({
+                        data: {
+                            name: nameRaw || emailRaw || phoneRaw || 'New Customer',
+                            email: emailRaw ?? null,
+                            phone: phoneRaw ?? null,
                         },
-                    };
+                        select: { id: true },
+                    });
+                    found = created;
                 }
-                else if (phone) {
-                    customerRel = {
-                        connectOrCreate: {
-                            where: { phone },
-                            create: { name: name || phone, phone, email: email ?? null },
-                        },
-                    };
-                }
-                else if (name) {
-                    // name only -> we’ll create inside the tx and then connect
-                    customerRel = { __needsCreateByName: { name } };
-                }
-                else {
-                    // newCustomer provided but empty -> treat as no customer
-                    customerRel = null;
-                }
-            }
-            // else: no customer info at all -> leave as null
-            // If we need a name-only customer, create it now (inside the same tx)
-            let finalCustomerRel = null;
-            if (customerRel && '__needsCreateByName' in customerRel) {
-                const created = await tx.customers.create({
-                    data: { name: customerRel.__needsCreateByName.name, email: null, phone: null },
-                    select: { id: true },
-                });
-                finalCustomerRel = { connect: { id: created.id } };
+                finalCustomerRel = { connect: { id: found.id } };
             }
             else {
-                finalCustomerRel = customerRel;
+                // 3) No customer info → leave as null
+                finalCustomerRel = null;
             }
+            // Consider "missing price" if unitPrice is null/undefined OR not a finite number OR <= 0 (adjust if you allow 0)
+            const hasMissingPriceInDto = (dto) => {
+                if (!dto.caterings?.length)
+                    return true; // no caterings yet => treat as incomplete
+                for (const cat of dto.caterings) {
+                    for (const ord of cat.orders ?? []) {
+                        const u = ord?.unitPrice;
+                        const n = typeof u === 'number' ? u : (u != null ? Number(u) : NaN);
+                        if (!Number.isFinite(n) || n <= 0)
+                            return true;
+                    }
+                }
+                return false;
+            };
+            const missingPriceFromDto = hasMissingPriceInDto(dto);
+            const desiredStatusAtStart = (finalCustomerRel == null || missingPriceFromDto)
+                ? 'incomplete'
+                : (dto.status ?? 'incomplete');
             // ---------- B) Build base event payload (omit customer if none) ----------
             const baseEventData = {
                 gcalEventId: dto.gcalEventId ?? null,
@@ -216,7 +232,7 @@ let EventsService = class EventsService {
                 delivery_charges: dto.deliveryCharges != null ? new client_1.Prisma.Decimal(dto.deliveryCharges) : null,
                 service_charges: dto.serviceCharges != null ? new client_1.Prisma.Decimal(dto.serviceCharges) : null,
                 headcount_est: dto.headcountEst ?? null,
-                status: finalCustomerRel == null ? 'incomplete' : dto.status ?? 'incomplete',
+                status: desiredStatusAtStart,
                 ...(finalCustomerRel ? { customer: finalCustomerRel } : {}), // <-- key bit
             };
             // ---------- C) Create / Upsert event ----------
@@ -224,9 +240,13 @@ let EventsService = class EventsService {
                 ? await tx.events.upsert({
                     where: { gcalEventId: dto.gcalEventId },
                     create: baseEventData,
-                    update: { ...baseEventData, status: dto.status ?? undefined },
+                    update: {
+                        ...baseEventData,
+                        status: desiredStatusAtStart, // <= force our computed status on edit
+                    },
                 })
                 : await tx.events.create({ data: baseEventData });
+            await tx.event_caterings.deleteMany({ where: { event_id: eventRow.id } });
             // ---------- D) Create caterings, orders, and items (batch) ----------
             let itemsSubtotal = new client_1.Prisma.Decimal(0);
             for (const cat of dto.caterings) {

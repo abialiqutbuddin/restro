@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "nodemon --watch src --exec ts-node src/main.ts",
     "build": "echo \"skip build on Azure\"",
+    "buildLocal": "tsc -p .",
     "start": "node dist/main.js",
     "postinstall": "prisma generate",
     "start:prod": "node dist/main.js",

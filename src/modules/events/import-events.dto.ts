@@ -20,7 +20,7 @@ export enum PricingModeCode {
   PER_UNIT_FROM_ITEMS  = 'per_unit_from_items',
 }
 export enum CurrencyCode { USD = 'USD' }
-export enum EventStatus { INCOMPLETE = 'incomplete', COMPLETE = 'complete', NEW = 'new' }
+export enum EventStatus { INCOMPLETE = 'incomplete', COMPLETE = 'complete', NEW = 'new', PENDING = 'pending' }
 
 /* ---- leaf DTOs ---- */
 export class ImportItemDto {

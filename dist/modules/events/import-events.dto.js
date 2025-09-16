@@ -36,6 +36,7 @@ var EventStatus;
     EventStatus["INCOMPLETE"] = "incomplete";
     EventStatus["COMPLETE"] = "complete";
     EventStatus["NEW"] = "new";
+    EventStatus["PENDING"] = "pending";
 })(EventStatus || (exports.EventStatus = EventStatus = {}));
 /* ---- leaf DTOs ---- */
 class ImportItemDto {

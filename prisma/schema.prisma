@@ -11,7 +11,7 @@ datasource db {
 
 enum PaymentMethod {
   cash
-  cheque
+  check
   credit
   others
 }

@@ -6,7 +6,7 @@ import { CreatePaymentDto, UpdatePaymentDto } from './dto/payments.dto';
 
 @Injectable()
 export class PaymentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   private async ensureEventByGcal(gcalId: string) {
     if (!gcalId?.trim()) {
@@ -18,6 +18,44 @@ export class PaymentsService {
     });
     if (!ev) throw new NotFoundException(`Event with gcalId "${gcalId}" not found`);
     return ev;
+  }
+
+  private async recomputeAndSetEventStatus(gcalId: string) {
+    const ev = await this.prisma.events.findUnique({
+      where: { gcalEventId: gcalId },
+      select: { id: true, customer_id: true, order_total: true, discount: true, status: true },
+    });
+    if (!ev) throw new NotFoundException(`Event with gcalId "${gcalId}" not found`);
+
+    const hasCustomer = !!ev.customer_id;
+
+    // Missing/zero prices?
+    const missingPrice = await this.prisma.event_catering_orders.findFirst({
+      where: {
+        event_catering: { event_id: ev.id },
+        // any row where unit_price is NOT > 0  => includes 0 and negatives
+        NOT: { unit_price: { gt: new Prisma.Decimal(0) } },
+      },
+      select: { id: true },
+    });
+
+    // Sum succeeded payments
+    const agg = await this.prisma.event_payments.aggregate({
+      where: { event_gcal_id: gcalId, status: 'succeeded' as any },
+      _sum: { amount: true },
+    });
+
+    const orderTotal = ev.order_total ?? new Prisma.Decimal(0);
+    const discount = ev.discount ?? new Prisma.Decimal(0);
+    const paid = agg._sum.amount ?? new Prisma.Decimal(0);
+    const balance = orderTotal.sub(discount).sub(paid);
+
+    const canBeComplete = hasCustomer && !missingPrice && balance.lte(new Prisma.Decimal(0));
+    const newStatus = canBeComplete ? 'complete' : 'incomplete';
+
+    if (newStatus !== ev.status) {
+      await this.prisma.events.update({ where: { id: ev.id }, data: { status: newStatus } });
+    }
   }
 
   async list(gcalId: string) {
@@ -51,6 +89,9 @@ export class PaymentsService {
     });
 
     const summary = await this.summary(gcalId);
+
+    await this.recomputeAndSetEventStatus(gcalId);
+
     return { payment, summary };
   }
 
@@ -82,6 +123,10 @@ export class PaymentsService {
     });
 
     const summary = await this.summary(gcalId);
+
+    await this.recomputeAndSetEventStatus(gcalId);
+
+
     return { payment: updated, summary };
   }
 
@@ -96,6 +141,9 @@ export class PaymentsService {
 
     await this.prisma.event_payments.delete({ where: { id: BigInt(paymentId) } });
     const summary = await this.summary(gcalId);
+
+    await this.recomputeAndSetEventStatus(gcalId);
+
     return { ok: true, summary };
   }
 

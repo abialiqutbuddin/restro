@@ -2,7 +2,7 @@
 import { IsEnum, IsNumber, IsOptional, IsString, IsDateString, ValidateIf, Min, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export enum PaymentMethodDto { cash='cash', cheque='cheque', credit='credit', others='others' }
+export enum PaymentMethodDto { cash='cash', check='check', credit='credit', others='others' }
 export enum PaymentStatusDto { pending='pending', succeeded='succeeded', failed='failed', refunded='refunded' }
 
 export class CreatePaymentDto {

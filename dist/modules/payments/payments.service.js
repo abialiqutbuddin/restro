@@ -30,6 +30,38 @@ let PaymentsService = class PaymentsService {
             throw new common_1.NotFoundException(`Event with gcalId "${gcalId}" not found`);
         return ev;
     }
+    async recomputeAndSetEventStatus(gcalId) {
+        const ev = await this.prisma.events.findUnique({
+            where: { gcalEventId: gcalId },
+            select: { id: true, customer_id: true, order_total: true, discount: true, status: true },
+        });
+        if (!ev)
+            throw new common_1.NotFoundException(`Event with gcalId "${gcalId}" not found`);
+        const hasCustomer = !!ev.customer_id;
+        // Missing/zero prices?
+        const missingPrice = await this.prisma.event_catering_orders.findFirst({
+            where: {
+                event_catering: { event_id: ev.id },
+                // any row where unit_price is NOT > 0  => includes 0 and negatives
+                NOT: { unit_price: { gt: new client_1.Prisma.Decimal(0) } },
+            },
+            select: { id: true },
+        });
+        // Sum succeeded payments
+        const agg = await this.prisma.event_payments.aggregate({
+            where: { event_gcal_id: gcalId, status: 'succeeded' },
+            _sum: { amount: true },
+        });
+        const orderTotal = ev.order_total ?? new client_1.Prisma.Decimal(0);
+        const discount = ev.discount ?? new client_1.Prisma.Decimal(0);
+        const paid = agg._sum.amount ?? new client_1.Prisma.Decimal(0);
+        const balance = orderTotal.sub(discount).sub(paid);
+        const canBeComplete = hasCustomer && !missingPrice && balance.lte(new client_1.Prisma.Decimal(0));
+        const newStatus = canBeComplete ? 'complete' : 'incomplete';
+        if (newStatus !== ev.status) {
+            await this.prisma.events.update({ where: { id: ev.id }, data: { status: newStatus } });
+        }
+    }
     async list(gcalId) {
         await this.ensureEventByGcal(gcalId);
         const payments = await this.prisma.event_payments.findMany({
@@ -57,6 +89,7 @@ let PaymentsService = class PaymentsService {
             },
         });
         const summary = await this.summary(gcalId);
+        await this.recomputeAndSetEventStatus(gcalId);
         return { payment, summary };
     }
     async update(gcalId, paymentId, dto) {
@@ -84,6 +117,7 @@ let PaymentsService = class PaymentsService {
             },
         });
         const summary = await this.summary(gcalId);
+        await this.recomputeAndSetEventStatus(gcalId);
         return { payment: updated, summary };
     }
     async remove(gcalId, paymentId) {
@@ -96,6 +130,7 @@ let PaymentsService = class PaymentsService {
             throw new common_1.NotFoundException(`Payment ${paymentId} not found for event ${gcalId}`);
         await this.prisma.event_payments.delete({ where: { id: BigInt(paymentId) } });
         const summary = await this.summary(gcalId);
+        await this.recomputeAndSetEventStatus(gcalId);
         return { ok: true, summary };
     }
     /** Returns { orderTotal, discount, paid, balance } */

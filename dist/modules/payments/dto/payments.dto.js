@@ -16,7 +16,7 @@ const class_transformer_1 = require("class-transformer");
 var PaymentMethodDto;
 (function (PaymentMethodDto) {
     PaymentMethodDto["cash"] = "cash";
-    PaymentMethodDto["cheque"] = "cheque";
+    PaymentMethodDto["check"] = "check";
     PaymentMethodDto["credit"] = "credit";
     PaymentMethodDto["others"] = "others";
 })(PaymentMethodDto || (exports.PaymentMethodDto = PaymentMethodDto = {}));
