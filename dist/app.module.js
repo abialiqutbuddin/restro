@@ -18,6 +18,7 @@ const lookup_module_1 = require("./modules/lookups/lookup.module");
 const seed_controller_1 = require("./seed/seed.controller");
 const customers_module_1 = require("./modules/customers/customers.module");
 const payments_module_1 = require("./modules/payments/payments.module");
+const dashboard_module_1 = require("./modules/dashboard/dashboard.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -33,6 +34,7 @@ exports.AppModule = AppModule = __decorate([
             lookup_module_1.LookupsModule,
             customers_module_1.CustomersModule,
             payments_module_1.PaymentsModule,
+            dashboard_module_1.DashboardModule,
         ],
         controllers: [seed_controller_1.SeedController],
     })

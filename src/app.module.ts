@@ -9,6 +9,7 @@ import { LookupsModule } from './modules/lookups/lookup.module';
 import { SeedController } from './seed/seed.controller';
 import { CustomersModule } from './modules/customers/customers.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     LookupsModule,
     CustomersModule,
     PaymentsModule,
+    DashboardModule,
   ],
   controllers: [SeedController],
 })
