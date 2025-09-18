@@ -156,36 +156,59 @@ let EventsService = class EventsService {
     async importEventTree(dto) {
         return this.prisma.$transaction(async (tx) => {
             let finalCustomerRel = null;
+            const trimmed = (s) => (s ?? '').trim();
+            const nonEmpty = (s) => {
+                const t = trimmed(s);
+                return t.length ? t : undefined;
+            };
             if (dto.customerId != null) {
-                // 1) Caller gave an explicit id → just connect
-                finalCustomerRel = { connect: { id: BigInt(dto.customerId) } };
-            }
-            else if (dto.newCustomer) {
-                // 2) New customer payload → resolve by email/phone/name (non-unique) then connect by id
-                const nameRaw = (dto.newCustomer.name ?? '').trim();
-                const emailRaw = dto.newCustomer.email?.trim() || undefined;
-                const phoneRaw = dto.newCustomer.phone?.trim() || undefined;
-                // Helper: prefer most-recent match when duplicates exist
-                const pickOneBy = async (where) => {
-                    return tx.customers.findFirst({
-                        where,
-                        orderBy: { created_at: 'desc' },
+                const id = BigInt(dto.customerId);
+                // Ensure the customer exists (throws if not)
+                const existing = await tx.customers.findUnique({
+                    where: { id },
+                    select: { id: true },
+                });
+                if (!existing) {
+                    throw new common_1.NotFoundException(`Customer ${dto.customerId} not found`);
+                }
+                // If caller sent newCustomer along with customerId, treat as a PATCH
+                const patch = dto.newCustomer
+                    ? {
+                        name: nonEmpty(dto.newCustomer.name),
+                        email: nonEmpty(dto.newCustomer.email) ?? null, // allow explicit null
+                        phone: nonEmpty(dto.newCustomer.phone) ?? null,
+                    }
+                    : null;
+                if (patch && (patch.name || patch.email !== undefined || patch.phone !== undefined)) {
+                    await tx.customers.update({
+                        where: { id },
+                        data: {
+                            ...(patch.name ? { name: patch.name } : {}),
+                            ...(patch.email !== undefined ? { email: patch.email } : {}),
+                            ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+                        },
                         select: { id: true },
                     });
-                };
+                }
+                finalCustomerRel = { connect: { id } };
+            }
+            else if (dto.newCustomer) {
+                // existing logic: resolve by email/phone/name; create if not found
+                const nameRaw = trimmed(dto.newCustomer.name);
+                const emailRaw = nonEmpty(dto.newCustomer.email);
+                const phoneRaw = nonEmpty(dto.newCustomer.phone);
+                const pickOneBy = async (where) => tx.customers.findFirst({
+                    where,
+                    orderBy: { created_at: 'desc' },
+                    select: { id: true },
+                });
                 let found = null;
-                // Resolve precedence: email → phone → (name exact)
-                if (emailRaw) {
+                if (emailRaw)
                     found = await pickOneBy({ email: emailRaw });
-                }
-                if (!found && phoneRaw) {
+                if (!found && phoneRaw)
                     found = await pickOneBy({ phone: phoneRaw });
-                }
-                if (!found && nameRaw) {
-                    // If you expect many identical names, you can tighten this to { name: nameRaw, email: null, phone: null }
+                if (!found && nameRaw)
                     found = await pickOneBy({ name: nameRaw });
-                }
-                // Create if still not found
                 if (!found) {
                     const created = await tx.customers.create({
                         data: {
@@ -200,8 +223,7 @@ let EventsService = class EventsService {
                 finalCustomerRel = { connect: { id: found.id } };
             }
             else {
-                // 3) No customer info → leave as null
-                finalCustomerRel = null;
+                finalCustomerRel = null; // allowed: event without a customer (will mark incomplete below)
             }
             // Consider "missing price" if unitPrice is null/undefined OR not a finite number OR <= 0 (adjust if you allow 0)
             const hasMissingPriceInDto = (dto) => {

@@ -64,29 +64,29 @@ export class ImportNewCustomerDto {
 }
 
 /* ---- class-level validator: exactly one of customerId / newCustomer ---- */
-function AtMostOneCustomer(options?: ValidationOptions) {
-  return function (object: object, propertyName: string) {
-    registerDecorator({
-      name: 'AtMostOneCustomer',
-      target: object.constructor,
-      propertyName,
-      constraints: [],
-      options,
-      validator: {
-        validate(_: any, args: ValidationArguments) {
-          const o = args.object as any;
-          const hasId  = typeof o.customerId === 'number';
-          const hasNew = !!o.newCustomer && typeof o.newCustomer.name === 'string';
-          // allow none, or exactly one; forbid both
-          return !(hasId && hasNew);
-        },
-        defaultMessage() {
-          return 'Provide at most one of customerId or newCustomer';
-        },
-      },
-    });
-  };
-}
+// function AtMostOneCustomer(options?: ValidationOptions) {
+//   return function (object: object, propertyName: string) {
+//     registerDecorator({
+//       name: 'AtMostOneCustomer',
+//       target: object.constructor,
+//       propertyName,
+//       constraints: [],
+//       options,
+//       validator: {
+//         validate(_: any, args: ValidationArguments) {
+//           const o = args.object as any;
+//           const hasId  = typeof o.customerId === 'number';
+//           const hasNew = !!o.newCustomer && typeof o.newCustomer.name === 'string';
+//           // allow none, or exactly one; forbid both
+//           return !(hasId && hasNew);
+//         },
+//         defaultMessage() {
+//           return 'Provide at most one of customerId or newCustomer';
+//         },
+//       },
+//     });
+//   };
+// }
 
 /* ---- ROOT DTO ---- */
 export class ImportEventDto {
@@ -101,7 +101,7 @@ export class ImportEventDto {
   @Type(() => ImportNewCustomerDto)
   newCustomer?: ImportNewCustomerDto;
 
-  @AtMostOneCustomer({ message: 'Provide atleast one of customerId or newCustomer.name' })
+  //@AtMostOneCustomer({ message: 'Provide atleast one of customerId or newCustomer.name' })
   _customerGuard!: string; // dummy field to attach the validator
 
   @IsDateString() eventDatetime!: string;

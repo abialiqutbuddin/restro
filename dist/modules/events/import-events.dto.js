@@ -159,29 +159,29 @@ __decorate([
     __metadata("design:type", String)
 ], ImportNewCustomerDto.prototype, "email", void 0);
 /* ---- class-level validator: exactly one of customerId / newCustomer ---- */
-function AtMostOneCustomer(options) {
-    return function (object, propertyName) {
-        (0, class_validator_1.registerDecorator)({
-            name: 'AtMostOneCustomer',
-            target: object.constructor,
-            propertyName,
-            constraints: [],
-            options,
-            validator: {
-                validate(_, args) {
-                    const o = args.object;
-                    const hasId = typeof o.customerId === 'number';
-                    const hasNew = !!o.newCustomer && typeof o.newCustomer.name === 'string';
-                    // allow none, or exactly one; forbid both
-                    return !(hasId && hasNew);
-                },
-                defaultMessage() {
-                    return 'Provide at most one of customerId or newCustomer';
-                },
-            },
-        });
-    };
-}
+// function AtMostOneCustomer(options?: ValidationOptions) {
+//   return function (object: object, propertyName: string) {
+//     registerDecorator({
+//       name: 'AtMostOneCustomer',
+//       target: object.constructor,
+//       propertyName,
+//       constraints: [],
+//       options,
+//       validator: {
+//         validate(_: any, args: ValidationArguments) {
+//           const o = args.object as any;
+//           const hasId  = typeof o.customerId === 'number';
+//           const hasNew = !!o.newCustomer && typeof o.newCustomer.name === 'string';
+//           // allow none, or exactly one; forbid both
+//           return !(hasId && hasNew);
+//         },
+//         defaultMessage() {
+//           return 'Provide at most one of customerId or newCustomer';
+//         },
+//       },
+//     });
+//   };
+// }
 /* ---- ROOT DTO ---- */
 class ImportEventDto {
     constructor() {
@@ -206,10 +206,6 @@ __decorate([
     (0, class_transformer_1.Type)(() => ImportNewCustomerDto),
     __metadata("design:type", ImportNewCustomerDto)
 ], ImportEventDto.prototype, "newCustomer", void 0);
-__decorate([
-    AtMostOneCustomer({ message: 'Provide atleast one of customerId or newCustomer.name' }),
-    __metadata("design:type", String)
-], ImportEventDto.prototype, "_customerGuard", void 0);
 __decorate([
     (0, class_validator_1.IsDateString)(),
     __metadata("design:type", String)

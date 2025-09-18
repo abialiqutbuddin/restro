@@ -19,6 +19,7 @@ const seed_controller_1 = require("./seed/seed.controller");
 const customers_module_1 = require("./modules/customers/customers.module");
 const payments_module_1 = require("./modules/payments/payments.module");
 const dashboard_module_1 = require("./modules/dashboard/dashboard.module");
+const square_module_1 = require("./modules/sqaure/square.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -35,6 +36,7 @@ exports.AppModule = AppModule = __decorate([
             customers_module_1.CustomersModule,
             payments_module_1.PaymentsModule,
             dashboard_module_1.DashboardModule,
+            square_module_1.SquareModule
         ],
         controllers: [seed_controller_1.SeedController],
     })
