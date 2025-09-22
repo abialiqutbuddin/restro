@@ -13,6 +13,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CustomersController = void 0;
+// src/features/customers/customers.controller.ts
 const common_1 = require("@nestjs/common");
 const customers_service_1 = require("./customers.service");
 const customers_dto_1 = require("./dto/customers.dto");
@@ -20,7 +21,11 @@ let CustomersController = class CustomersController {
     constructor(svc) {
         this.svc = svc;
     }
-    // Put this BEFORE any :id route so "all" doesn't get parsed as an id
+    // Search (server-side, min chars, paged)
+    search(query) {
+        return this.svc.list(query);
+    }
+    // Keep this if other parts of your app still rely on it
     getAll() {
         return this.svc.listAll();
     }
@@ -38,6 +43,14 @@ let CustomersController = class CustomersController {
     }
 };
 exports.CustomersController = CustomersController;
+__decorate([
+    (0, common_1.Get)('search'),
+    (0, common_1.UsePipes)(new common_1.ValidationPipe({ transform: true, whitelist: true })),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [customers_dto_1.SearchCustomersDto]),
+    __metadata("design:returntype", void 0)
+], CustomersController.prototype, "search", null);
 __decorate([
     (0, common_1.Get)('all'),
     __metadata("design:type", Function),

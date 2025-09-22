@@ -21,6 +21,7 @@ var PricingUnitCode;
     PricingUnitCode["PER_PERSON"] = "per_person";
     PricingUnitCode["PER_TRAY"] = "per_tray";
     PricingUnitCode["PER_BOX"] = "per_box";
+    PricingUnitCode["PER_ITEM"] = "per_item";
 })(PricingUnitCode || (exports.PricingUnitCode = PricingUnitCode = {}));
 var PricingModeCode;
 (function (PricingModeCode) {

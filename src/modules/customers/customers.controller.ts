@@ -1,12 +1,32 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+// src/features/customers/customers.controller.ts
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+  Query,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { CustomersService } from './customers.service';
-import { CreateCustomerDto, UpdateCustomerDto } from './dto/customers.dto';
+import { CreateCustomerDto, SearchCustomersDto, UpdateCustomerDto } from './dto/customers.dto';
 
 @Controller('customers')
 export class CustomersController {
   constructor(private readonly svc: CustomersService) {}
 
-  // Put this BEFORE any :id route so "all" doesn't get parsed as an id
+  // Search (server-side, min chars, paged)
+  @Get('search')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  search(@Query() query: SearchCustomersDto) {
+    return this.svc.list(query);
+  }
+
+  // Keep this if other parts of your app still rely on it
   @Get('all')
   getAll() {
     return this.svc.listAll();

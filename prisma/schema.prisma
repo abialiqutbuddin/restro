@@ -36,6 +36,7 @@ model customers {
 
   // relations
   events events[]
+  @@index([name])
   @@index([email])
   @@index([phone])
 }

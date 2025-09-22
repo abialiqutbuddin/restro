@@ -10,32 +10,44 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CustomersService = void 0;
+// src/features/customers/customers.service.ts
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../database/prisma.service");
 let CustomersService = class CustomersService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    // ---------- List / Read / Write ----------
+    // ---------- Search / List (server-side, paginated, min chars) ----------
     list(params) {
-        const { q, skip = 0, take = 50 } = params ?? {};
-        // Build a properly typed where clause (without `mode`)
-        const where = q
-            ? {
-                OR: [
-                    { name: { contains: q } },
-                    { email: { contains: q } }, // StringNullableFilter is fine without `mode`
-                    { phone: { contains: q } }, // StringNullableFilter is fine without `mode`
-                ],
-            }
-            : undefined;
+        const { q = '', skip = 0, take = 20, min = 3 } = params ?? {};
+        const trimmed = q.trim();
+        const safeTake = Math.min(Math.max(take, 1), 50);
+        if (trimmed.length < min) {
+            // return empty set when user hasn't typed enough
+            return Promise.resolve([]);
+        }
+        // Case-insensitive for name, plain contains for nullable email/phone
+        const where = {
+            OR: [
+                { name: { contains: trimmed } },
+                { email: { contains: trimmed } },
+                { phone: { contains: trimmed } },
+            ],
+        };
         return this.prisma.customers.findMany({
             where,
-            orderBy: { id: 'desc' },
+            orderBy: [{ name: 'asc' }, { id: 'desc' }],
             skip,
-            take,
+            take: safeTake,
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+            },
         });
     }
+    // ---------- CRUD ----------
     async get(id) {
         const row = await this.prisma.customers.findUnique({
             where: { id: BigInt(id) },
@@ -73,11 +85,6 @@ let CustomersService = class CustomersService {
         await this.prisma.customers.delete({ where: { id: BigInt(id) } });
         return { success: true };
     }
-    /**
- * Resolve a customer relation for events:
- * - If customerId: optionally patch (name/phone/email) then connect by id
- * - Else if newCustomer: always create a new row and connect
- */
     // ---------- Relation builder for Events ----------
     async resolveForEvent(args) {
         const { customerId, newCustomer, tx } = args;
@@ -87,7 +94,6 @@ let CustomersService = class CustomersService {
             const exists = await db.customers.findUnique({ where: { id: idBig }, select: { id: true } });
             if (!exists)
                 throw new common_1.NotFoundException(`Customer ${customerId} not found`);
-            // Optional patch if caller provided fields
             if (newCustomer) {
                 const patch = {};
                 if (newCustomer.name?.trim())
@@ -115,16 +121,11 @@ let CustomersService = class CustomersService {
         }
         throw new common_1.BadRequestException('Provide either customerId or newCustomer');
     }
-    //GET ALL CUSTOMER LIST
+    // ---------- Legacy: get all (keep if you still need it somewhere) ----------
     async listAll() {
         return this.prisma.customers.findMany({
             orderBy: { name: 'asc' },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                phone: true,
-            },
+            select: { id: true, name: true, email: true, phone: true },
         });
     }
 };

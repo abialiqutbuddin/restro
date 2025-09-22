@@ -13,7 +13,7 @@ export enum PricingUnitCode {
   PER_PERSON = 'per_person',
   PER_TRAY   = 'per_tray',
   PER_BOX   = 'per_box',
-
+  PER_ITEM  = 'per_item',
 }
 export enum PricingModeCode {
   PER_UNIT_MANUAL      = 'per_unit_manual',
