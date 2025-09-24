@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GcalController = void 0;
 const common_1 = require("@nestjs/common");
 const gcal_service_1 = require("./gcal.service");
+const create_google_cal_dto_1 = require("./dto/create-google-cal.dto");
 let GcalController = class GcalController {
     constructor(svc) {
         this.svc = svc;
@@ -48,6 +49,24 @@ let GcalController = class GcalController {
         });
         return { count: items.length, items };
     }
+    async create(dto) {
+        const created = await this.svc.createEvent({
+            calendarId: dto.calendarId,
+            summary: dto.summary,
+            description: dto.description,
+            start: dto.start,
+            end: dto.end,
+            location: dto.location,
+            timeZone: dto.timeZone,
+        });
+        // Return a light shape that Flutter can easily read
+        return {
+            ok: true,
+            eventId: created.id ?? null,
+            htmlLink: created.htmlLink ?? null,
+            created,
+        };
+    }
 };
 exports.GcalController = GcalController;
 __decorate([
@@ -74,6 +93,13 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], GcalController.prototype, "list", null);
+__decorate([
+    (0, common_1.Post)('create'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [create_google_cal_dto_1.CreateGcalEventDto]),
+    __metadata("design:returntype", Promise)
+], GcalController.prototype, "create", null);
 exports.GcalController = GcalController = __decorate([
     (0, common_1.Controller)('gcal'),
     __metadata("design:paramtypes", [gcal_service_1.GcalService])

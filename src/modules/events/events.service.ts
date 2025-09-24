@@ -4,6 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { ImportEventDto } from './import-events.dto';
+import { GcalService } from '../gcal/gcal.service';
 
 const asNum = (v: unknown): number | null => {
   if (v == null) return null;
@@ -19,6 +20,7 @@ export class EventsService {
   constructor(
     private prisma: PrismaService,
     private customers: CustomersService,
+    private readonly gcal: GcalService,   // <-- inject here
   ) { }
 
   /** List events including customer + nested items */
@@ -91,54 +93,68 @@ export class EventsService {
   }
 
   /** Check many Google event IDs against DB */
-  async checkByGcalIds(ids: string[]) {
+  /** Check many Google event IDs against DB */
+  async checkByGcalIds(
+    ids: string[],
+    googleEvents: Record<string, { description?: string }> = {}
+  ) {
     if (!ids.length) return {};
 
-    // 1) Pull events
+    // 1) Pull events from DB
     const events = await this.prisma.events.findMany({
       where: { gcalEventId: { in: ids } },
       select: {
         gcalEventId: true,
         status: true,
         event_datetime: true,
+        calender_text: true,
       },
     });
 
-    // 2) Pull all payments (newest first, so first row per id is latest)
+    // 2) Pull payments (latest per gcal id)
     const payments = await this.prisma.event_payments.findMany({
       where: { event_gcal_id: { in: ids } },
-      select: {
-        event_gcal_id: true,
-        status: true,
-      },
+      select: { event_gcal_id: true, status: true },
       orderBy: { created_at: 'desc' },
     });
 
-    // 3) Collapse to latest status per gcal id
     const latestPayByGcal = new Map<string, string>();
     for (const p of payments) {
-      if (!p.event_gcal_id) continue;
-      if (!latestPayByGcal.has(p.event_gcal_id)) {
+      if (p.event_gcal_id && !latestPayByGcal.has(p.event_gcal_id)) {
         latestPayByGcal.set(p.event_gcal_id, p.status ?? 'pending');
       }
     }
 
-    // 4) Build result
+    // 3) Build result
     const result: Record<string, {
       exists: boolean;
-      status?: string;        // event status
-      paymentStatus: string;  // latest payment status or 'pending'
-      orderDate?: string;     // event datetime ISO
+      status?: string;
+      paymentStatus: string;
+      orderDate?: string;
+      /** true if DB calender_text === Google description; null if we didn't get Google data */
+      isDescriptionSame: boolean | null;
+      /** conventional: true if different, false if same, null if unknown */
+      isModified: boolean | null;
     }> = {};
+
+    const norm = (s?: string | null) => (s ?? '').trim();
 
     for (const id of ids) {
       const ev = events.find(e => e.gcalEventId === id);
+      const localDesc = ev?.calender_text ?? null;
+
+      const haveG = Object.prototype.hasOwnProperty.call(googleEvents, id);
+      const gcalDesc = haveG ? (googleEvents[id]?.description ?? null) : null;
+
+      const same = (ev && haveG) ? norm(localDesc) === norm(gcalDesc) : null;
 
       result[id] = {
         exists: !!ev,
         status: ev?.status ?? undefined,
         paymentStatus: latestPayByGcal.get(id) ?? 'pending',
         orderDate: ev?.event_datetime ? ev.event_datetime.toISOString() : undefined,
+        isDescriptionSame: same,
+        isModified: same === null ? null : !same,
       };
     }
 
@@ -170,89 +186,125 @@ export class EventsService {
       | { __needsCreateByName: { name: string } }
       | null;
 
+    let createdGcalId: string | null = null;
+    let createdInGcal = false;
+
+    //log('Importing event:', dto);
+    // If newOrder is true, create in Google Calendar first
+
+      if (dto.newOrder) {
+    // Build basic details for Google
+    const start = new Date(dto.eventDatetime);
+    const end   = new Date(start.getTime() + 1 * 60 * 60 * 1000); // +2h default
+
+    const summary =
+      (dto.calendarText?.split('\n')[0]?.trim())
+        ||  'Catering Order';
+
+    const description = dto.calendarText ?? dto.notes ?? '';
+
+    const ev = await this.gcal.createEvent({
+      summary,
+      description,
+      location: dto.venue ?? undefined,
+      start: start.toISOString(),
+      end:   end.toISOString(),
+      timeZone: 'America/Chicago', // if you have one in dto
+    });
+
+    createdGcalId = ev.id ?? null;
+    if (!createdGcalId) {
+      throw new BadRequestException('Google Calendar did not return an event id');
+    }
+    createdInGcal = true;
+
+    // make it available to the DB upsert below
+    dto.gcalEventId = createdGcalId;
+  }
+
     return this.prisma.$transaction(async (tx) => {
       // ---------- A) Resolve customer relation on the SAME tx client ----------
-type CustomerRelConnect = { connect: { id: bigint } } | null;
+      type CustomerRelConnect = { connect: { id: bigint } } | null;
 
-let finalCustomerRel: CustomerRelConnect = null;
+      let finalCustomerRel: CustomerRelConnect = null;
 
-const trimmed = (s?: string | null) => (s ?? '').trim();
-const nonEmpty = (s?: string | null) => {
-  const t = trimmed(s);
-  return t.length ? t : undefined;
-};
+      const trimmed = (s?: string | null) => (s ?? '').trim();
+      const nonEmpty = (s?: string | null) => {
+        const t = trimmed(s);
+        return t.length ? t : undefined;
+      };
 
-if (dto.customerId != null) {
-  const id = BigInt(dto.customerId);
+      if (dto.customerId != null) {
+        const id = BigInt(dto.customerId);
 
-  // Ensure the customer exists (throws if not)
-  const existing = await tx.customers.findUnique({
-    where: { id },
-    select: { id: true },
-  });
-  if (!existing) {
-    throw new NotFoundException(`Customer ${dto.customerId} not found`);
-  }
+        // Ensure the customer exists (throws if not)
+        const existing = await tx.customers.findUnique({
+          where: { id },
+          select: { id: true },
+        });
+        if (!existing) {
+          throw new NotFoundException(`Customer ${dto.customerId} not found`);
+        }
 
-  // If caller sent newCustomer along with customerId, treat as a PATCH
-  const patch = dto.newCustomer
-    ? {
-        name: nonEmpty(dto.newCustomer.name),
-        email: nonEmpty(dto.newCustomer.email) ?? null, // allow explicit null
-        phone: nonEmpty(dto.newCustomer.phone) ?? null,
+        // If caller sent newCustomer along with customerId, treat as a PATCH
+        const patch = dto.newCustomer
+          ? {
+            name: nonEmpty(dto.newCustomer.name),
+            email: nonEmpty(dto.newCustomer.email) ?? null, // allow explicit null
+            phone: nonEmpty(dto.newCustomer.phone) ?? null,
+          }
+          : null;
+
+        if (patch && (patch.name || patch.email !== undefined || patch.phone !== undefined)) {
+          await tx.customers.update({
+            where: { id },
+            data: {
+              ...(patch.name ? { name: patch.name } : {}),
+              ...(patch.email !== undefined ? { email: patch.email } : {}),
+              ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+            },
+            select: { id: true },
+          });
+        }
+
+        finalCustomerRel = { connect: { id } };
+
+      } else if (dto.newCustomer) {
+        // existing logic: resolve by email/phone/name; create if not found
+        const nameRaw = trimmed(dto.newCustomer.name);
+        const emailRaw = nonEmpty(dto.newCustomer.email);
+        const phoneRaw = nonEmpty(dto.newCustomer.phone);
+
+        const pickOneBy = async (where: Prisma.customersWhereInput) =>
+          tx.customers.findFirst({
+            where,
+            orderBy: { created_at: 'desc' },
+            select: { id: true },
+          });
+
+        let found = null as { id: bigint } | null;
+
+        if (emailRaw) found = await pickOneBy({ email: emailRaw });
+        if (!found && phoneRaw) found = await pickOneBy({ phone: phoneRaw });
+        if (!found && nameRaw) found = await pickOneBy({ name: nameRaw });
+
+        if (!found) {
+          const created = await tx.customers.create({
+            data: {
+              name: nameRaw || emailRaw || phoneRaw || 'New Customer',
+              email: emailRaw ?? null,
+              phone: phoneRaw ?? null,
+            },
+            select: { id: true },
+          });
+          found = created;
+        }
+
+        finalCustomerRel = { connect: { id: found.id } };
+
+      } else {
+        finalCustomerRel = null; // allowed: event without a customer (will mark incomplete below)
       }
-    : null;
-
-  if (patch && (patch.name || patch.email !== undefined || patch.phone !== undefined)) {
-    await tx.customers.update({
-      where: { id },
-      data: {
-        ...(patch.name ? { name: patch.name } : {}),
-        ...(patch.email !== undefined ? { email: patch.email } : {}),
-        ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
-      },
-      select: { id: true },
-    });
-  }
-
-  finalCustomerRel = { connect: { id } };
-
-} else if (dto.newCustomer) {
-  // existing logic: resolve by email/phone/name; create if not found
-  const nameRaw = trimmed(dto.newCustomer.name);
-  const emailRaw = nonEmpty(dto.newCustomer.email);
-  const phoneRaw = nonEmpty(dto.newCustomer.phone);
-
-  const pickOneBy = async (where: Prisma.customersWhereInput) =>
-    tx.customers.findFirst({
-      where,
-      orderBy: { created_at: 'desc' },
-      select: { id: true },
-    });
-
-  let found = null as { id: bigint } | null;
-
-  if (emailRaw) found = await pickOneBy({ email: emailRaw });
-  if (!found && phoneRaw) found = await pickOneBy({ phone: phoneRaw });
-  if (!found && nameRaw) found = await pickOneBy({ name: nameRaw });
-
-  if (!found) {
-    const created = await tx.customers.create({
-      data: {
-        name: nameRaw || emailRaw || phoneRaw || 'New Customer',
-        email: emailRaw ?? null,
-        phone: phoneRaw ?? null,
-      },
-      select: { id: true },
-    });
-    found = created;
-  }
-
-  finalCustomerRel = { connect: { id: found.id } };
-
-} else {
-  finalCustomerRel = null; // allowed: event without a customer (will mark incomplete below)
-}
 
       // Consider "missing price" if unitPrice is null/undefined OR not a finite number OR <= 0 (adjust if you allow 0)
       const hasMissingPriceInDto = (dto: ImportEventDto) => {

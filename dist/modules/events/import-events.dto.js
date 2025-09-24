@@ -258,6 +258,12 @@ __decorate([
     __metadata("design:type", String)
 ], ImportEventDto.prototype, "status", void 0);
 __decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    (0, class_transformer_1.Type)(() => Boolean),
+    __metadata("design:type", Boolean)
+], ImportEventDto.prototype, "newOrder", void 0);
+__decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ValidateNested)({ each: true }),
     (0, class_transformer_1.Type)(() => ImportCateringDto),

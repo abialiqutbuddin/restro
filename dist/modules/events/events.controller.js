@@ -18,6 +18,18 @@ const class_validator_1 = require("class-validator");
 const events_service_1 = require("./events.service");
 const import_events_dto_1 = require("./import-events.dto");
 const create_event_dto_1 = require("./dto/create-event.dto");
+const class_transformer_1 = require("class-transformer"); // <-- important
+class GoogleEventLiteDto {
+}
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], GoogleEventLiteDto.prototype, "id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], GoogleEventLiteDto.prototype, "description", void 0);
 class CheckEventsDto {
 }
 __decorate([
@@ -25,6 +37,13 @@ __decorate([
     (0, class_validator_1.ArrayNotEmpty)(),
     __metadata("design:type", Array)
 ], CheckEventsDto.prototype, "ids", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => GoogleEventLiteDto),
+    __metadata("design:type", Array)
+], CheckEventsDto.prototype, "events", void 0);
 let EventsController = class EventsController {
     constructor(svc) {
         this.svc = svc;
@@ -40,7 +59,11 @@ let EventsController = class EventsController {
     }
     /** POST /api/events/check  → { "<id>": { exists: boolean, status?: string } } */
     check(dto) {
-        return this.svc.checkByGcalIds(dto.ids);
+        const map = Object.fromEntries((dto.events ?? []).map(e => [
+            e.id,
+            e.description == null ? {} : { description: e.description } // omit when null
+        ]));
+        return this.svc.checkByGcalIds(dto.ids, map);
     }
     /** Optional convenience: GET /api/events/by-gcal/:id */
     getByGcal(id) {

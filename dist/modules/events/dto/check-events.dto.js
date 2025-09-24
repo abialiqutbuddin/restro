@@ -9,9 +9,22 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CheckEventsDto = void 0;
+exports.CheckEventsDto = exports.GoogleEventLiteDto = void 0;
 // src/events/dto/check-events.dto.ts
 const class_validator_1 = require("class-validator");
+const class_transformer_1 = require("class-transformer");
+class GoogleEventLiteDto {
+}
+exports.GoogleEventLiteDto = GoogleEventLiteDto;
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], GoogleEventLiteDto.prototype, "id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", Object)
+], GoogleEventLiteDto.prototype, "description", void 0);
 class CheckEventsDto {
 }
 exports.CheckEventsDto = CheckEventsDto;
@@ -21,3 +34,10 @@ __decorate([
     (0, class_validator_1.IsString)({ each: true }),
     __metadata("design:type", Array)
 ], CheckEventsDto.prototype, "ids", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => GoogleEventLiteDto),
+    __metadata("design:type", Array)
+], CheckEventsDto.prototype, "events", void 0);

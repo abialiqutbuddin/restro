@@ -25,7 +25,7 @@ export class GcalService {
     return this.oauth2.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
-      scope: ['https://www.googleapis.com/auth/calendar.readonly'],
+      scope: ['https://www.googleapis.com/auth/calendar'],
     });
   }
 
@@ -134,4 +134,43 @@ export class GcalService {
     if (isNaN(d.getTime())) throw new BadRequestException(`Invalid ${label} date: ${value}`);
     return d.toISOString();
   }
+
+ async createEvent(params: {
+    calendarId?: string;
+    summary: string;
+    description?: string;
+    start: string; // "YYYY-MM-DD" OR ISO
+    end: string;   // "YYYY-MM-DD" OR ISO
+    location?: string;
+    timeZone?: string;
+  }) {
+    const calendarId = params.calendarId || 'primary';
+
+    const event: calendar_v3.Schema$Event = {
+      summary: params.summary,
+      description: params.description,
+      location: params.location,
+      start: this.wrapDate(params.start, params.timeZone),
+      end:   this.wrapDate(params.end,   params.timeZone),
+    };
+
+    try {
+      const { data } = await this.calendar.events.insert({
+        calendarId,
+        requestBody: event,
+      });
+      return data;
+    } catch (err) {
+      console.error('[GcalService] createEvent error:', err);
+      throw new BadRequestException('Failed to create Google Calendar event');
+    }
+  }
+
+private wrapDate(value: string, tz?: string): calendar_v3.Schema$EventDateTime {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return { date: value };
+  }
+  return { dateTime: new Date(value).toISOString(), timeZone: tz ?? 'UTC' };
+}
+
 }

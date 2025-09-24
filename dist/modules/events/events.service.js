@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../database/prisma.service");
 const customers_service_1 = require("../customers/customers.service");
+const gcal_service_1 = require("../gcal/gcal.service");
 const asNum = (v) => {
     if (v == null)
         return null;
@@ -27,9 +28,10 @@ const asNum = (v) => {
     return Number.isNaN(n) ? null : n;
 };
 let EventsService = class EventsService {
-    constructor(prisma, customers) {
+    constructor(prisma, customers, gcal) {
         this.prisma = prisma;
         this.customers = customers;
+        this.gcal = gcal;
     }
     /** List events including customer + nested items */
     list() {
@@ -94,45 +96,48 @@ let EventsService = class EventsService {
         });
     }
     /** Check many Google event IDs against DB */
-    async checkByGcalIds(ids) {
+    /** Check many Google event IDs against DB */
+    async checkByGcalIds(ids, googleEvents = {}) {
         if (!ids.length)
             return {};
-        // 1) Pull events
+        // 1) Pull events from DB
         const events = await this.prisma.events.findMany({
             where: { gcalEventId: { in: ids } },
             select: {
                 gcalEventId: true,
                 status: true,
                 event_datetime: true,
+                calender_text: true,
             },
         });
-        // 2) Pull all payments (newest first, so first row per id is latest)
+        // 2) Pull payments (latest per gcal id)
         const payments = await this.prisma.event_payments.findMany({
             where: { event_gcal_id: { in: ids } },
-            select: {
-                event_gcal_id: true,
-                status: true,
-            },
+            select: { event_gcal_id: true, status: true },
             orderBy: { created_at: 'desc' },
         });
-        // 3) Collapse to latest status per gcal id
         const latestPayByGcal = new Map();
         for (const p of payments) {
-            if (!p.event_gcal_id)
-                continue;
-            if (!latestPayByGcal.has(p.event_gcal_id)) {
+            if (p.event_gcal_id && !latestPayByGcal.has(p.event_gcal_id)) {
                 latestPayByGcal.set(p.event_gcal_id, p.status ?? 'pending');
             }
         }
-        // 4) Build result
+        // 3) Build result
         const result = {};
+        const norm = (s) => (s ?? '').trim();
         for (const id of ids) {
             const ev = events.find(e => e.gcalEventId === id);
+            const localDesc = ev?.calender_text ?? null;
+            const haveG = Object.prototype.hasOwnProperty.call(googleEvents, id);
+            const gcalDesc = haveG ? (googleEvents[id]?.description ?? null) : null;
+            const same = (ev && haveG) ? norm(localDesc) === norm(gcalDesc) : null;
             result[id] = {
                 exists: !!ev,
                 status: ev?.status ?? undefined,
                 paymentStatus: latestPayByGcal.get(id) ?? 'pending',
                 orderDate: ev?.event_datetime ? ev.event_datetime.toISOString() : undefined,
+                isDescriptionSame: same,
+                isModified: same === null ? null : !same,
             };
         }
         return result;
@@ -154,6 +159,33 @@ let EventsService = class EventsService {
     /** Import nested event tree (short tx; no connectOrCreate on email/phone) */
     // src/modules/events/events.service.ts (inside EventsService)
     async importEventTree(dto) {
+        let createdGcalId = null;
+        let createdInGcal = false;
+        //log('Importing event:', dto);
+        // If newOrder is true, create in Google Calendar first
+        if (dto.newOrder) {
+            // Build basic details for Google
+            const start = new Date(dto.eventDatetime);
+            const end = new Date(start.getTime() + 1 * 60 * 60 * 1000); // +2h default
+            const summary = (dto.calendarText?.split('\n')[0]?.trim())
+                || 'Catering Order';
+            const description = dto.calendarText ?? dto.notes ?? '';
+            const ev = await this.gcal.createEvent({
+                summary,
+                description,
+                location: dto.venue ?? undefined,
+                start: start.toISOString(),
+                end: end.toISOString(),
+                timeZone: 'America/Chicago', // if you have one in dto
+            });
+            createdGcalId = ev.id ?? null;
+            if (!createdGcalId) {
+                throw new common_1.BadRequestException('Google Calendar did not return an event id');
+            }
+            createdInGcal = true;
+            // make it available to the DB upsert below
+            dto.gcalEventId = createdGcalId;
+        }
         return this.prisma.$transaction(async (tx) => {
             let finalCustomerRel = null;
             const trimmed = (s) => (s ?? '').trim();
@@ -483,5 +515,6 @@ exports.EventsService = EventsService;
 exports.EventsService = EventsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        customers_service_1.CustomersService])
+        customers_service_1.CustomersService,
+        gcal_service_1.GcalService])
 ], EventsService);

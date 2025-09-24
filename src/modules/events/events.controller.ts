@@ -1,13 +1,30 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
-import { IsArray, IsDateString, IsEmail, IsNumber, IsOptional, IsString, ArrayNotEmpty } from 'class-validator';
+import { IsArray, IsDateString, IsEmail, IsNumber, IsOptional, IsString, ArrayNotEmpty, ValidateNested } from 'class-validator';
 import { EventsService } from './events.service';
 import { ImportEventDto } from './import-events.dto';
 import { CreateEventDto } from './dto/create-event.dto';
+import { Type } from 'class-transformer'; // <-- important
+
+class GoogleEventLiteDto {
+  @IsString()
+  id!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string; // <-- drop "| null"
+}
 
 class CheckEventsDto {
   @IsArray() @ArrayNotEmpty()
   ids!: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GoogleEventLiteDto)
+  events?: GoogleEventLiteDto[];
 }
+
 
 @Controller('events')
 export class EventsController {
@@ -29,10 +46,17 @@ export class EventsController {
   }
 
   /** POST /api/events/check  → { "<id>": { exists: boolean, status?: string } } */
-  @Post('check')
-  check(@Body() dto: CheckEventsDto) {
-    return this.svc.checkByGcalIds(dto.ids);
-  }
+@Post('check')
+check(@Body() dto: CheckEventsDto) {
+  const map = Object.fromEntries(
+    (dto.events ?? []).map(e => [
+      e.id,
+      e.description == null ? {} : { description: e.description } // omit when null
+    ])
+  ) as Record<string, { description?: string }>;
+
+  return this.svc.checkByGcalIds(dto.ids, map);
+}
 
   /** Optional convenience: GET /api/events/by-gcal/:id */
   @Get('by-gcal/:id')

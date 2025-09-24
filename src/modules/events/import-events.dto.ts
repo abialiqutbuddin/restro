@@ -101,8 +101,7 @@ export class ImportEventDto {
   @Type(() => ImportNewCustomerDto)
   newCustomer?: ImportNewCustomerDto;
 
-  //@AtMostOneCustomer({ message: 'Provide atleast one of customerId or newCustomer.name' })
-  _customerGuard!: string; // dummy field to attach the validator
+  _customerGuard!: string;
 
   @IsDateString() eventDatetime!: string;
 
@@ -115,6 +114,11 @@ export class ImportEventDto {
   @IsOptional() @IsNumber() @Type(() => Number) @Min(0) serviceCharges?: number;
   @IsOptional() @IsInt() @Type(() => Number) headcountEst?: number;
   @IsOptional() @IsEnum(EventStatus) status?: EventStatus;
+
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  newOrder?: boolean;
 
   @IsArray()
   @ValidateNested({ each: true })
