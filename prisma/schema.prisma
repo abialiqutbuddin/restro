@@ -219,3 +219,39 @@ model event_catering_menu_items {
   @@index([item_id])
   @@index([size_id])
 }
+
+model Invoice {
+  id            Int      @id @default(autoincrement())
+  invoiceNumber String   @unique
+  date          DateTime
+  status        String   @default("ISSUED")
+
+  customerName  String
+  customerEmail String?
+  customerPhone String?
+
+  company       Json      // snapshot of your company info shown in the PDF
+  currencyCode  String
+  taxRate       Float
+  discount      Float     @default(0)
+  shipping      Float     @default(0)
+  isTaxExempt   Boolean   @default(false)
+  paymentInstr  String?
+
+  // Totals (cached for reports)
+  subtotal      Float
+  tax           Float
+  total         Float
+
+  // Store the structure that generated the invoice
+  envelope      Json      // your InvoiceEnvelope JSON
+  eventLines    Json      // edited rows { [eventId]: [{desc, qty, unitPrice}] }
+  items         Json      // flattened line items with totals
+
+  // Optional: store the PDF itself
+  pdf           Bytes?
+  pdfSha256     String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}

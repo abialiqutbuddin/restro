@@ -11,6 +11,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { SquareModule } from './modules/sqaure/square.module';
+import { InvoicesModule } from './modules/invoice/invoice.module';
 
 @Module({
   imports: [
@@ -24,7 +25,8 @@ import { SquareModule } from './modules/sqaure/square.module';
     CustomersModule,
     PaymentsModule,
     DashboardModule,
-    SquareModule
+    SquareModule,
+    InvoicesModule
   ],
   controllers: [SeedController],
 })

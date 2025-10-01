@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../database/prisma.service");
 const customers_service_1 = require("../customers/customers.service");
 const gcal_service_1 = require("../gcal/gcal.service");
+const invoice_mapper_1 = require("./invoice-mapper"); // <— add this import
 const asNum = (v) => {
     if (v == null)
         return null;
@@ -374,7 +375,7 @@ let EventsService = class EventsService {
                 },
             });
         }, {
-            timeout: 20_000,
+            timeout: 200_000,
             maxWait: 5_000,
         });
     }
@@ -509,6 +510,205 @@ let EventsService = class EventsService {
             throw new common_1.NotFoundException(`Event with gcalEventId "${gcalId}" not found`);
         await this.prisma.events.delete({ where: { id: ev.id } });
         return { success: true, gcalEventId: gcalId, id: ev.id };
+    }
+    asNum(v) {
+        const n = (v == null) ? 0 : (typeof v === 'bigint') ? Number(v) :
+            v?.constructor?.name === 'Decimal' ? Number(v) :
+                typeof v === 'number' ? v : Number(v);
+        return Number.isFinite(n) ? n : 0;
+    }
+    mapDbEventToEventView(ev) {
+        let itemsSubtotal = 0;
+        const caterings = ev.event_caterings.map((c) => {
+            const orders = c.event_catering_orders.map((o) => {
+                const qty = this.asNum(o.qty);
+                const unitPrice = this.asNum(o.unit_price);
+                const lineSubtotal = qty * unitPrice;
+                itemsSubtotal += lineSubtotal;
+                const items = o.event_catering_menu_items.map((mi) => {
+                    const qtyPerUnit = this.asNum(mi.qty_per_unit) || 1;
+                    const componentPrice = mi.component_price != null ? this.asNum(mi.component_price) : null;
+                    const componentSubtotalForOne = componentPrice == null ? null : qtyPerUnit * componentPrice;
+                    return {
+                        id: Number(mi.id),
+                        position: mi.position_number,
+                        item: mi.item && { id: Number(mi.item.id), name: mi.item.name },
+                        size: mi.size ? { id: Number(mi.size.id), name: mi.size.name } : null,
+                        qtyPerUnit,
+                        componentPrice,
+                        componentSubtotalForOne,
+                        notes: mi.notes,
+                    };
+                });
+                return {
+                    id: Number(o.id),
+                    unit: { code: o.unit.code, label: o.unit.label, qtyLabel: o.unit.qty_label },
+                    pricingMode: o.pricing_mode,
+                    qty,
+                    unitPrice,
+                    currency: o.currency ?? 'USD',
+                    lineSubtotal,
+                    calcNotes: o.calc_notes,
+                    items,
+                };
+            });
+            const subtotal = orders.reduce((s, x) => s + x.lineSubtotal, 0);
+            return {
+                id: Number(c.id),
+                category: c.category && {
+                    id: Number(c.category.id),
+                    name: c.category.name,
+                    slug: c.category.slug,
+                },
+                titleOverride: c.title_override,
+                instructions: c.instructions,
+                subtotal,
+                orders,
+            };
+        });
+        const delivery = this.asNum(ev.delivery_charges);
+        const service = this.asNum(ev.service_charges);
+        const grandTotal = itemsSubtotal + delivery + service;
+        return {
+            id: Number(ev.id),
+            gcalEventId: ev.gcalEventId,
+            customer: ev.customer
+                ? {
+                    id: Number(ev.customer.id),
+                    name: ev.customer.name,
+                    email: ev.customer.email,
+                    phone: ev.customer.phone,
+                }
+                : null,
+            customerName: ev.customer?.name ?? '', // optional if you want flat
+            customerPhone: ev.customer?.phone ?? null,
+            customerEmail: ev.customer?.email ?? null,
+            eventDate: ev.event_datetime,
+            venue: ev.venue,
+            notes: ev.notes,
+            calendarText: ev.calender_text,
+            isDelivery: !!ev.is_delivery,
+            status: ev.status,
+            totals: { itemsSubtotal, delivery, service, grandTotal },
+            caterings,
+        };
+    }
+    async buildInvoiceForCustomerRange(args) {
+        const { customerId, start, end, includeEvents } = args;
+        const rows = await this.prisma.events.findMany({
+            where: {
+                customer_id: BigInt(customerId),
+                event_datetime: { gte: start, lt: end },
+            },
+            orderBy: { event_datetime: 'asc' },
+            include: {
+                customer: true,
+                event_caterings: {
+                    include: {
+                        category: true,
+                        event_catering_orders: {
+                            include: {
+                                unit: true,
+                                event_catering_menu_items: {
+                                    include: { item: true, size: true },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        if (!rows.length) {
+            // Keep your existing empty skeleton for backward compatibility
+            return {
+                invoice: {
+                    invoiceNumber: '',
+                    date: new Date().toISOString(),
+                    clientName: '',
+                    company: null,
+                    items: [],
+                    paymentInstructions: '',
+                    discount: 0,
+                    shipping: 0,
+                    isTaxExempt: false,
+                    taxRate: 0.0,
+                    currencyCode: 'USD',
+                    notes: '',
+                    range: { start: start.toISOString(), end: end.toISOString() },
+                    customerId,
+                },
+                ...(includeEvents ? { events: [] } : {}),
+            };
+        }
+        // ✅ Use the external mapper for the new structure
+        return (0, invoice_mapper_1.mapRowsToInvoiceEnvelope)(rows, start, end);
+    }
+    // (Optional) If you want same JSON for explicit eventIds:
+    async buildInvoiceForEvents(eventIds, includeEvents) {
+        if (!eventIds.length) {
+            return {
+                invoice: {
+                    invoiceNumber: '',
+                    date: new Date().toISOString(),
+                    clientName: '',
+                    company: null,
+                    items: [],
+                    paymentInstructions: '',
+                    discount: 0,
+                    shipping: 0,
+                    isTaxExempt: false,
+                    taxRate: 0.0,
+                    currencyCode: 'USD',
+                    notes: '',
+                    range: null,
+                    eventIds,
+                },
+                ...(includeEvents ? { events: [] } : {}),
+            };
+        }
+        const rows = await this.prisma.events.findMany({
+            where: { gcalEventId: { in: eventIds } },
+            orderBy: { event_datetime: 'asc' },
+            include: {
+                customer: true,
+                event_caterings: {
+                    include: {
+                        category: true,
+                        event_catering_orders: {
+                            include: {
+                                unit: true,
+                                event_catering_menu_items: { include: { item: true, size: true } },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        if (!rows.length) {
+            return {
+                invoice: {
+                    invoiceNumber: '',
+                    date: new Date().toISOString(),
+                    clientName: '',
+                    company: null,
+                    items: [],
+                    paymentInstructions: '',
+                    discount: 0,
+                    shipping: 0,
+                    isTaxExempt: false,
+                    taxRate: 0.0,
+                    currencyCode: 'USD',
+                    notes: '',
+                    range: null,
+                    eventIds,
+                },
+                ...(includeEvents ? { events: [] } : {}),
+            };
+        }
+        // ✅ Reuse the same mapper (range is null here; pass a minimal range if needed)
+        const start = rows[0].event_datetime;
+        const end = rows[rows.length - 1].event_datetime;
+        return (0, invoice_mapper_1.mapRowsToInvoiceEnvelope)(rows, start, end);
     }
 };
 exports.EventsService = EventsService;

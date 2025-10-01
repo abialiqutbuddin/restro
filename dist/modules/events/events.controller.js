@@ -16,9 +16,10 @@ exports.EventsController = void 0;
 const common_1 = require("@nestjs/common");
 const class_validator_1 = require("class-validator");
 const events_service_1 = require("./events.service");
-const import_events_dto_1 = require("./import-events.dto");
+const import_events_dto_1 = require("./dto/import-events.dto");
 const create_event_dto_1 = require("./dto/create-event.dto");
 const class_transformer_1 = require("class-transformer"); // <-- important
+const invoice_dto_1 = require("./dto/invoice.dto");
 class GoogleEventLiteDto {
 }
 __decorate([
@@ -82,6 +83,22 @@ let EventsController = class EventsController {
     }
     async deleteByGcal(gcalId) {
         return this.svc.deleteByGcalId(gcalId);
+    }
+    async buildInvoice(q) {
+        const includeEvents = (q.includeEvents ?? 'true').toLowerCase() === 'true';
+        const eventIds = q.eventIds ?? []; // already string[]
+        if (eventIds.length) {
+            return this.svc.buildInvoiceForEvents(eventIds, includeEvents); // expects string[]
+        }
+        if (!q.customerId || !q.start || !q.end) {
+            return { error: 'Provide either eventIds OR customerId + start + end (ISO).' };
+        }
+        return this.svc.buildInvoiceForCustomerRange({
+            customerId: q.customerId,
+            start: new Date(q.start),
+            end: new Date(q.end),
+            includeEvents,
+        });
     }
 };
 exports.EventsController = EventsController;
@@ -147,6 +164,13 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], EventsController.prototype, "deleteByGcal", null);
+__decorate([
+    (0, common_1.Get)('invoice/build'),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [invoice_dto_1.InvoiceQueryDto]),
+    __metadata("design:returntype", Promise)
+], EventsController.prototype, "buildInvoice", null);
 exports.EventsController = EventsController = __decorate([
     (0, common_1.Controller)('events'),
     __metadata("design:paramtypes", [events_service_1.EventsService])

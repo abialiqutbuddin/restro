@@ -3,8 +3,9 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { CreateEventDto } from './dto/create-event.dto';
-import { ImportEventDto } from './import-events.dto';
+import { ImportEventDto } from './dto/import-events.dto';
 import { GcalService } from '../gcal/gcal.service';
+import { mapRowsToInvoiceEnvelope } from './invoice-mapper'; // <— add this import
 
 const asNum = (v: unknown): number | null => {
   if (v == null) return null;
@@ -13,6 +14,13 @@ const asNum = (v: unknown): number | null => {
   if (typeof v === 'number') return v;
   const n = Number(v as any);
   return Number.isNaN(n) ? null : n;
+};
+
+type BuildInvoiceArgs = {
+  customerId: number;
+  start: Date; // inclusive
+  end: Date;   // exclusive
+  includeEvents: boolean;
 };
 
 @Injectable()
@@ -192,37 +200,39 @@ export class EventsService {
     //log('Importing event:', dto);
     // If newOrder is true, create in Google Calendar first
 
-      if (dto.newOrder) {
-    // Build basic details for Google
-    const start = new Date(dto.eventDatetime);
-    const end   = new Date(start.getTime() + 1 * 60 * 60 * 1000); // +2h default
+    if (dto.newOrder) {
+      // Build basic details for Google
+      const start = new Date(dto.eventDatetime);
+      const end = new Date(start.getTime() + 1 * 60 * 60 * 1000); // +2h default
 
-    const summary =
-      (dto.calendarText?.split('\n')[0]?.trim())
-        ||  'Catering Order';
+      const summary =
+        (dto.calendarText?.split('\n')[0]?.trim())
+        || 'Catering Order';
 
-    const description = dto.calendarText ?? dto.notes ?? '';
+      const description = dto.calendarText ?? dto.notes ?? '';
 
-    const ev = await this.gcal.createEvent({
-      summary,
-      description,
-      location: dto.venue ?? undefined,
-      start: start.toISOString(),
-      end:   end.toISOString(),
-      timeZone: 'America/Chicago', // if you have one in dto
-    });
+      const ev = await this.gcal.createEvent({
+        summary,
+        description,
+        location: dto.venue ?? undefined,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        timeZone: 'America/Chicago', // if you have one in dto
+      });
 
-    createdGcalId = ev.id ?? null;
-    if (!createdGcalId) {
-      throw new BadRequestException('Google Calendar did not return an event id');
+      createdGcalId = ev.id ?? null;
+      if (!createdGcalId) {
+        throw new BadRequestException('Google Calendar did not return an event id');
+      }
+      createdInGcal = true;
+
+      // make it available to the DB upsert below
+      dto.gcalEventId = createdGcalId;
     }
-    createdInGcal = true;
-
-    // make it available to the DB upsert below
-    dto.gcalEventId = createdGcalId;
-  }
 
     return this.prisma.$transaction(async (tx) => {
+
+      
       // ---------- A) Resolve customer relation on the SAME tx client ----------
       type CustomerRelConnect = { connect: { id: bigint } } | null;
 
@@ -441,7 +451,7 @@ export class EventsService {
         },
       });
     }, {
-      timeout: 20_000,
+      timeout: 200_000,
       maxWait: 5_000,
     });
   }
@@ -587,4 +597,320 @@ export class EventsService {
     await this.prisma.events.delete({ where: { id: ev.id } });
     return { success: true, gcalEventId: gcalId, id: ev.id };
   }
+
+  private asNum(v: unknown): number {
+    const n = (v == null) ? 0 : (typeof v === 'bigint') ? Number(v) :
+      (v as any)?.constructor?.name === 'Decimal' ? Number(v as any) :
+        typeof v === 'number' ? v : Number(v as any);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  private mapDbEventToEventView(ev: any) {
+    let itemsSubtotal = 0;
+
+    const caterings = ev.event_caterings.map((c: any) => {
+      const orders = c.event_catering_orders.map((o: any) => {
+        const qty = this.asNum(o.qty);
+        const unitPrice = this.asNum(o.unit_price);
+        const lineSubtotal = qty * unitPrice;
+        itemsSubtotal += lineSubtotal;
+
+        const items = o.event_catering_menu_items.map((mi: any) => {
+          const qtyPerUnit = this.asNum(mi.qty_per_unit) || 1;
+          const componentPrice = mi.component_price != null ? this.asNum(mi.component_price) : null;
+          const componentSubtotalForOne =
+            componentPrice == null ? null : qtyPerUnit * componentPrice;
+
+          return {
+            id: Number(mi.id),
+            position: mi.position_number,
+            item: mi.item && { id: Number(mi.item.id), name: mi.item.name },
+            size: mi.size ? { id: Number(mi.size.id), name: mi.size.name } : null,
+            qtyPerUnit,
+            componentPrice,
+            componentSubtotalForOne,
+            notes: mi.notes,
+          };
+        });
+
+        return {
+          id: Number(o.id),
+          unit: { code: o.unit.code, label: o.unit.label, qtyLabel: o.unit.qty_label },
+          pricingMode: o.pricing_mode,
+          qty,
+          unitPrice,
+          currency: o.currency ?? 'USD',
+          lineSubtotal,
+          calcNotes: o.calc_notes,
+          items,
+        };
+      });
+
+      const subtotal = orders.reduce((s: number, x: any) => s + x.lineSubtotal, 0);
+
+      return {
+        id: Number(c.id),
+        category: c.category && {
+          id: Number(c.category.id),
+          name: c.category.name,
+          slug: c.category.slug,
+        },
+        titleOverride: c.title_override,
+        instructions: c.instructions,
+        subtotal,
+        orders,
+      };
+    });
+
+    const delivery = this.asNum(ev.delivery_charges);
+    const service = this.asNum(ev.service_charges);
+    const grandTotal = itemsSubtotal + delivery + service;
+
+    return {
+      id: Number(ev.id),
+      gcalEventId: ev.gcalEventId,
+      customer: ev.customer
+        ? {
+          id: Number(ev.customer.id),
+          name: ev.customer.name,
+          email: ev.customer.email,
+          phone: ev.customer.phone,
+        }
+        : null,
+      customerName: ev.customer?.name ?? '', // optional if you want flat
+      customerPhone: ev.customer?.phone ?? null,
+      customerEmail: ev.customer?.email ?? null,
+      eventDate: ev.event_datetime,
+      venue: ev.venue,
+      notes: ev.notes,
+      calendarText: ev.calender_text,
+      isDelivery: !!ev.is_delivery,
+      status: ev.status,
+      totals: { itemsSubtotal, delivery, service, grandTotal },
+      caterings,
+    };
+  }
+
+  async buildInvoiceForCustomerRange(args: BuildInvoiceArgs) {
+    const { customerId, start, end, includeEvents } = args;
+
+    const rows = await this.prisma.events.findMany({
+      where: {
+        customer_id: BigInt(customerId),
+        event_datetime: { gte: start, lt: end },
+      },
+      orderBy: { event_datetime: 'asc' },
+      include: {
+        customer: true,
+        event_caterings: {
+          include: {
+            category: true,
+            event_catering_orders: {
+              include: {
+                unit: true,
+                event_catering_menu_items: {
+                  include: { item: true, size: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!rows.length) {
+      // Keep your existing empty skeleton for backward compatibility
+      return {
+        invoice: {
+          invoiceNumber: '',
+          date: new Date().toISOString(),
+          clientName: '',
+          company: null,
+          items: [],
+          paymentInstructions: '',
+          discount: 0,
+          shipping: 0,
+          isTaxExempt: false,
+          taxRate: 0.0,
+          currencyCode: 'USD',
+          notes: '',
+          range: { start: start.toISOString(), end: end.toISOString() },
+          customerId,
+        },
+        ...(includeEvents ? { events: [] } : {}),
+      };
+    }
+
+    // ✅ Use the external mapper for the new structure
+    return mapRowsToInvoiceEnvelope(rows, start, end);
+  }
+
+  // (Optional) If you want same JSON for explicit eventIds:
+  async buildInvoiceForEvents(eventIds: string[], includeEvents: boolean) {
+    if (!eventIds.length) {
+      return {
+        invoice: {
+          invoiceNumber: '',
+          date: new Date().toISOString(),
+          clientName: '',
+          company: null,
+          items: [],
+          paymentInstructions: '',
+          discount: 0,
+          shipping: 0,
+          isTaxExempt: false,
+          taxRate: 0.0,
+          currencyCode: 'USD',
+          notes: '',
+          range: null,
+          eventIds,
+        },
+        ...(includeEvents ? { events: [] } : {}),
+      };
+    }
+
+    const rows = await this.prisma.events.findMany({
+      where: { gcalEventId: { in: eventIds } },
+      orderBy: { event_datetime: 'asc' },
+      include: {
+        customer: true,
+        event_caterings: {
+          include: {
+            category: true,
+            event_catering_orders: {
+              include: {
+                unit: true,
+                event_catering_menu_items: { include: { item: true, size: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!rows.length) {
+      return {
+        invoice: {
+          invoiceNumber: '',
+          date: new Date().toISOString(),
+          clientName: '',
+          company: null,
+          items: [],
+          paymentInstructions: '',
+          discount: 0,
+          shipping: 0,
+          isTaxExempt: false,
+          taxRate: 0.0,
+          currencyCode: 'USD',
+          notes: '',
+          range: null,
+          eventIds,
+        },
+        ...(includeEvents ? { events: [] } : {}),
+      };
+    }
+
+    // ✅ Reuse the same mapper (range is null here; pass a minimal range if needed)
+    const start = rows[0].event_datetime;
+    const end = rows[rows.length - 1].event_datetime;
+    return mapRowsToInvoiceEnvelope(rows, start, end);
+  }
+
+  // async buildInvoiceForEvents(eventIds: string[], includeEvents: boolean) {
+  //   if (!eventIds.length) {
+  //     return { invoice: { items: [], discount: 0, shipping: 0, isTaxExempt: false, taxRate: 0, currencyCode: 'USD', notes: '' }, ...(includeEvents ? { events: [] } : {}) };
+  //   }
+
+  //   // Fetch those events (preserve order by date)
+  //   const rows = await this.prisma.events.findMany({
+  //     where: { gcalEventId: { in: eventIds } },
+  //     orderBy: { event_datetime: 'asc' },
+  //     include: {
+  //       customer: true,
+  //       event_caterings: {
+  //         include: {
+  //           category: true,
+  //           event_catering_orders: {
+  //             include: {
+  //               unit: true,
+  //               event_catering_menu_items: { include: { item: true, size: true } },
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   });
+
+  //   if (!rows.length) {
+  //     return {
+  //       invoice: {
+  //         invoiceNumber: '',
+  //         date: new Date().toISOString(),
+  //         clientName: '',
+  //         company: null,
+  //         items: [],
+  //         paymentInstructions: '',
+  //         discount: 0,
+  //         shipping: 0,
+  //         isTaxExempt: false,
+  //         taxRate: 0.0,
+  //         currencyCode: 'USD',
+  //         notes: '',
+  //         range: null,          // no range for explicit ids
+  //         eventIds,             // echo back what was requested
+  //       },
+  //       ...(includeEvents ? { events: [] } : {}),
+  //     };
+  //   }
+
+  //   // Build EventView[] (same mapping you already have)
+  //   const eventViews = rows.map((r) => this.mapDbEventToEventView(r));
+
+  //   // Flatten into invoice items (same pattern as customer-range)
+  //   const items: Array<{ description: string; qty: number; unitPrice: number }> = [];
+  //   for (const ev of rows) {
+  //     const dateStr = ev.event_datetime.toISOString().slice(0, 10); // YYYY-MM-DD
+
+  //     for (const cat of ev.event_caterings) {
+  //       for (const ord of cat.event_catering_orders) {
+  //         const qty = this.asNum(ord.qty);
+  //         const unitPrice = this.asNum(ord.unit_price);
+  //         const unit = ord.unit?.qty_label ?? ord.unit?.label ?? 'units';
+  //         const catName = cat.title_override || cat.category?.name || 'Catering';
+  //         const venuePart = ev.venue ? ` @ ${ev.venue}` : '';
+  //         const desc = `${catName}${venuePart} — ${qty} ${unit}`;
+  //         items.push({ description: desc, qty, unitPrice });
+  //       }
+  //     }
+
+  //     // const delivery = this.asNum(ev.delivery_charges);
+  //     // if (delivery > 0) items.push({ description: `[${dateStr}] Delivery`, qty: 1, unitPrice: delivery });
+
+  //     // const service = this.asNum(ev.service_charges);
+  //     // if (service > 0) items.push({ description: `[${dateStr}] Service`, qty: 1, unitPrice: service });
+  //   }
+
+  //   const first = rows[0];
+  //   const clientName = first.customer?.name ?? 'Customer';
+
+  //   const invoice = {
+  //     invoiceNumber: '',
+  //     date: new Date().toISOString(),
+  //     clientName,
+  //     company: null as any,
+  //     items: items.map((x) => ({ description: x.description, qty: x.qty, unitPrice: x.unitPrice })),
+  //     paymentInstructions: '',
+  //     discount: 0,
+  //     shipping: 0,
+  //     isTaxExempt: false,
+  //     taxRate: 0.0,
+  //     currencyCode: 'USD',
+  //     notes: '',
+  //     range: null,
+  //     eventIds,
+  //   };
+
+  //   return includeEvents ? { invoice, events: eventViews } : { invoice };
+  // }
+
 }

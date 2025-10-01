@@ -1,0 +1,30 @@
+-- CreateTable
+CREATE TABLE `Invoice` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `invoiceNumber` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'ISSUED',
+    `customerName` VARCHAR(191) NOT NULL,
+    `customerEmail` VARCHAR(191) NULL,
+    `customerPhone` VARCHAR(191) NULL,
+    `company` JSON NOT NULL,
+    `currencyCode` VARCHAR(191) NOT NULL,
+    `taxRate` DOUBLE NOT NULL,
+    `discount` DOUBLE NOT NULL DEFAULT 0,
+    `shipping` DOUBLE NOT NULL DEFAULT 0,
+    `isTaxExempt` BOOLEAN NOT NULL DEFAULT false,
+    `paymentInstr` VARCHAR(191) NULL,
+    `subtotal` DOUBLE NOT NULL,
+    `tax` DOUBLE NOT NULL,
+    `total` DOUBLE NOT NULL,
+    `envelope` JSON NOT NULL,
+    `eventLines` JSON NOT NULL,
+    `items` JSON NOT NULL,
+    `pdf` LONGBLOB NULL,
+    `pdfSha256` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `Invoice_invoiceNumber_key`(`invoiceNumber`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
