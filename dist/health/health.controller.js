@@ -13,7 +13,7 @@ exports.HealthController = void 0;
 const common_1 = require("@nestjs/common");
 let HealthController = class HealthController {
     ok() {
-        return { ok: true, ts: new Date().toISOString() };
+        return { ok: true, ts: new Date().toISOString(), version: 'v1.15' };
     }
 };
 exports.HealthController = HealthController;

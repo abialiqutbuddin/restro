@@ -47,21 +47,22 @@ export class InvoicesService {
   }
 
 async getLastInvoiceNumber() {
-  const last = await this.prisma.invoice.findFirst({
-    orderBy: { invoiceNumber: 'desc' },
-    select: { invoiceNumber: true },
-  });
+  const rows = await this.prisma.$queryRaw<
+    Array<{ invoiceNumber: string }>
+  >`
+    SELECT \`invoiceNumber\`
+    FROM \`Invoice\`
+    ORDER BY CAST(REGEXP_REPLACE(\`invoiceNumber\`, '[^0-9]', '') AS UNSIGNED) DESC
+    LIMIT 1
+  `;
 
-  if (!last) {
-    return { last: null, lastNumeric: 0, next: 'INV-0001' };
-  }
+  const lastInv = rows[0]?.invoiceNumber ?? null;
+  const num = lastInv ? parseInt(lastInv.replace(/\D/g, ''), 10) || 0 : 0;
 
-  // make sure invoiceNumber is string "1550" or "INV-1550"
-  const num = parseInt(last.invoiceNumber.replace(/\D/g, ''), 10) || 0;
   return {
-    last: last.invoiceNumber,
+    last: lastInv,
     lastNumeric: num,
-    next: `${String(num + 1).padStart(4, '0')}`,
+    next: `${String(num + 1).padStart(4, '0')}`, // keep 0001 style
   };
 }
 

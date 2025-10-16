@@ -23,6 +23,9 @@ export class CreatePaymentDto {
 
   @IsOptional() @IsString()
   notes?: string;
+
+  @IsOptional() @IsNumber() discount?: number;  // absolute amount to SET on the event
+
 }
 
 export class UpdatePaymentDto {
@@ -46,4 +49,7 @@ export class UpdatePaymentDto {
 
   @IsOptional() @IsEnum(PaymentStatusDto)
   status?: PaymentStatusDto;
+
+  @IsOptional() @IsNumber() discount?: number;
+
 }

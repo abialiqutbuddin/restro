@@ -20,6 +20,6 @@ export class QueryMenuItemsDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt() @Min(1) @Max(100)
+  @IsInt() @Min(1) @Max(1000)
   take?: number = 20;
 }

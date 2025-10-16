@@ -411,7 +411,7 @@ function mapPerItem(c: any): PerItemBlock {
         item: itemName,
         size: sizeName,
         qty: orderQty,
-        pricePerQty: price,
+        pricePerQty: price / orderQty,
         total: orderQty * price,
       });
       continue;
@@ -429,7 +429,7 @@ function mapPerItem(c: any): PerItemBlock {
         item: itemName,
         size: sizeName,
         qty,
-        pricePerQty: price,
+        pricePerQty: price / qty,
         total: qty * price,
       });
       continue;
@@ -449,7 +449,7 @@ function mapPerItem(c: any): PerItemBlock {
         item: itemName,
         size: sizeName,
         qty,
-        pricePerQty: price,
+        pricePerQty: price / qty,
         total: qty * price,
       });
     }

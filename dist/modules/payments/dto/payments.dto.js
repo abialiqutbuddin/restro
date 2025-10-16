@@ -60,6 +60,11 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreatePaymentDto.prototype, "notes", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], CreatePaymentDto.prototype, "discount", void 0);
 class UpdatePaymentDto {
 }
 exports.UpdatePaymentDto = UpdatePaymentDto;
@@ -101,3 +106,8 @@ __decorate([
     (0, class_validator_1.IsEnum)(PaymentStatusDto),
     __metadata("design:type", String)
 ], UpdatePaymentDto.prototype, "status", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], UpdatePaymentDto.prototype, "discount", void 0);
