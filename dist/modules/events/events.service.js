@@ -16,6 +16,7 @@ const prisma_service_1 = require("../../database/prisma.service");
 const customers_service_1 = require("../customers/customers.service");
 const gcal_service_1 = require("../gcal/gcal.service");
 const invoice_mapper_1 = require("./invoice-mapper"); // <— add this import
+const date_conversion_1 = require("../../utils/date_conversion");
 const asNum = (v) => {
     if (v == null)
         return null;
@@ -34,12 +35,35 @@ let EventsService = class EventsService {
         this.customers = customers;
         this.gcal = gcal;
     }
+    async resolveContractRelation(contractId, customerRel, client = this.prisma) {
+        if (contractId == null)
+            return null;
+        if (!customerRel?.connect?.id) {
+            throw new common_1.BadRequestException('Contract requires an attached customer');
+        }
+        const id = BigInt(contractId);
+        const contract = await client.contracts.findUnique({
+            where: { id },
+            select: { id: true, customer_id: true, is_active: true },
+        });
+        if (!contract) {
+            throw new common_1.NotFoundException(`Contract ${contractId} not found`);
+        }
+        if (!contract.is_active) {
+            throw new common_1.BadRequestException('Contract is inactive');
+        }
+        if (contract.customer_id !== customerRel.connect.id) {
+            throw new common_1.BadRequestException('Contract belongs to a different customer');
+        }
+        return { connect: { id: contract.id } };
+    }
     /** List events including customer + nested items */
     list() {
         return this.prisma.events.findMany({
             orderBy: { event_datetime: 'desc' },
             include: {
                 customer: true,
+                contract: true,
                 event_caterings: {
                     include: {
                         event_catering_orders: {
@@ -78,7 +102,11 @@ let EventsService = class EventsService {
                         }
                         : null,
         });
-        const noCustomerProvided = !customerRel;
+        const contractRel = await this.resolveContractRelation(dto.contractId ?? null, customerRel);
+        const billingType = dto.billingType ?? (contractRel ? client_1.EventBillingType.contract : client_1.EventBillingType.per_event);
+        const billingStatus = dto.billingStatus ?? (billingType === client_1.EventBillingType.contract
+            ? client_1.EventBillingStatus.unbilled
+            : client_1.EventBillingStatus.unbilled);
         return this.prisma.events.create({
             data: {
                 gcalEventId: dto.gcalEventId ?? null,
@@ -92,28 +120,42 @@ let EventsService = class EventsService {
                 headcount_est: dto.headcountEst ?? null,
                 status: 'incomplete',
                 ...(customerRel ? { customer: customerRel } : {}),
+                ...(contractRel ? { contract: contractRel } : {}),
+                billing_type: billingType,
+                billing_status: billingStatus,
             },
-            include: { customer: true },
+            include: { customer: true, contract: true },
         });
     }
     /** Check many Google event IDs against DB */
-    /** Check many Google event IDs against DB */
+    // src/modules/events/events.service.ts
     async checkByGcalIds(ids, googleEvents = {}) {
         if (!ids.length)
             return {};
-        // 1) Pull events from DB
+        // 1) Pull ONLY non-archived events from DB + pick customer name
         const events = await this.prisma.events.findMany({
-            where: { gcalEventId: { in: ids } },
+            where: {
+                gcalEventId: { in: ids },
+                NOT: { status: 'archived' }, // hide archived
+            },
             select: {
                 gcalEventId: true,
                 status: true,
                 event_datetime: true,
                 calender_text: true,
+                billing_type: true,
+                billing_status: true,
+                customer: { select: { name: true } }, // 👈 include customer name
+                contract: { select: { id: true, name: true, code: true } },
             },
         });
-        // 2) Pull payments (latest per gcal id)
+        // Keep list of active (non-archived) ids only
+        const activeIds = events.map(e => e.gcalEventId).filter(Boolean);
+        if (!activeIds.length)
+            return {};
+        // 2) Latest payment status per active id
         const payments = await this.prisma.event_payments.findMany({
-            where: { event_gcal_id: { in: ids } },
+            where: { event_gcal_id: { in: activeIds } },
             select: { event_gcal_id: true, status: true },
             orderBy: { created_at: 'desc' },
         });
@@ -123,32 +165,101 @@ let EventsService = class EventsService {
                 latestPayByGcal.set(p.event_gcal_id, p.status ?? 'pending');
             }
         }
-        // 3) Build result
         const result = {};
         const norm = (s) => (s ?? '').trim();
-        for (const id of ids) {
+        for (const id of activeIds) {
             const ev = events.find(e => e.gcalEventId === id);
             const localDesc = ev?.calender_text ?? null;
             const haveG = Object.prototype.hasOwnProperty.call(googleEvents, id);
             const gcalDesc = haveG ? (googleEvents[id]?.description ?? null) : null;
             const same = (ev && haveG) ? norm(localDesc) === norm(gcalDesc) : null;
             result[id] = {
-                exists: !!ev,
+                exists: !!ev, // true here
                 status: ev?.status ?? undefined,
                 paymentStatus: latestPayByGcal.get(id) ?? 'pending',
                 orderDate: ev?.event_datetime ? ev.event_datetime.toISOString() : undefined,
                 isDescriptionSame: same,
                 isModified: same === null ? null : !same,
+                // Only include when the event exists (i.e., not new) and name is present
+                customerName: ev?.customer?.name?.trim() ? ev.customer.name.trim() : undefined,
+                billingType: ev?.billing_type ?? undefined,
+                billingStatus: ev?.billing_status ?? undefined,
+                contractId: ev?.contract?.id ? Number(ev.contract.id) : undefined,
+                contractName: ev?.contract?.name ?? undefined,
             };
         }
         return result;
     }
+    // async checkByGcalIds(
+    //   ids: string[],
+    //   googleEvents: Record<string, { description?: string }> = {}
+    // ) {
+    //   if (!ids.length) return {};
+    //   // 1) Pull ONLY non-archived events from DB
+    //   const events = await this.prisma.events.findMany({
+    //     where: {
+    //       gcalEventId: { in: ids },
+    //       NOT: { status: 'archived' }, // ← hide archived
+    //     },
+    //     select: {
+    //       gcalEventId: true,
+    //       status: true,
+    //       event_datetime: true,
+    //       calender_text: true,
+    //     },
+    //   });
+    //   // Keep the list of active (non-archived) ids only
+    //   const activeIds = events.map(e => e.gcalEventId!).filter(Boolean);
+    //   // If everything requested was archived or missing, short-circuit
+    //   if (!activeIds.length) return {};
+    //   // 2) Pull payments for active ids only (latest per gcal id)
+    //   const payments = await this.prisma.event_payments.findMany({
+    //     where: { event_gcal_id: { in: activeIds } },
+    //     select: { event_gcal_id: true, status: true },
+    //     orderBy: { created_at: 'desc' },
+    //   });
+    //   const latestPayByGcal = new Map<string, string>();
+    //   for (const p of payments) {
+    //     if (p.event_gcal_id && !latestPayByGcal.has(p.event_gcal_id)) {
+    //       latestPayByGcal.set(p.event_gcal_id, p.status ?? 'pending');
+    //     }
+    //   }
+    //   // 3) Build result ONLY for active ids
+    //   const result: Record<string, {
+    //     exists: boolean;
+    //     status?: string;
+    //     paymentStatus: string;
+    //     orderDate?: string;
+    //     /** true if DB calender_text === Google description; null if we didn't get Google data */
+    //     isDescriptionSame: boolean | null;
+    //     /** conventional: true if different, false if same, null if unknown */
+    //     isModified: boolean | null;
+    //   }> = {};
+    //   const norm = (s?: string | null) => (s ?? '').trim();
+    //   for (const id of activeIds) {
+    //     const ev = events.find(e => e.gcalEventId === id);
+    //     const localDesc = ev?.calender_text ?? null;
+    //     const haveG = Object.prototype.hasOwnProperty.call(googleEvents, id);
+    //     const gcalDesc = haveG ? (googleEvents[id]?.description ?? null) : null;
+    //     const same = (ev && haveG) ? norm(localDesc) === norm(gcalDesc) : null;
+    //     result[id] = {
+    //       exists: !!ev, // will be true here
+    //       status: ev?.status ?? undefined,
+    //       paymentStatus: latestPayByGcal.get(id) ?? 'pending',
+    //       orderDate: ev?.event_datetime ? ev.event_datetime.toISOString() : undefined,
+    //       isDescriptionSame: same,
+    //       isModified: same === null ? null : !same,
+    //     };
+    //   }
+    //   return result;
+    // }
     /** Single lookup by gcal */
     async getByGcalId(id) {
         return this.prisma.events.findFirst({
             where: { gcalEventId: id },
             include: {
                 customer: true,
+                contract: true,
                 event_caterings: {
                     include: {
                         event_catering_orders: { include: { event_catering_menu_items: true } },
@@ -160,14 +271,26 @@ let EventsService = class EventsService {
     /** Import nested event tree (short tx; no connectOrCreate on email/phone) */
     // src/modules/events/events.service.ts (inside EventsService)
     async importEventTree(dto) {
+        //const eventInstant = parseAsCentralToUTC(dto.eventDatetime);
+        const eventInstant = (0, date_conversion_1.toDateKeepWall)(dto.eventDatetime);
+        console.log(`DATE SENT BY FRONTEND: ${dto.eventDatetime}`);
+        console.log(`EVENT DATE AFTER CONVERSION: ${eventInstant}`);
         let createdGcalId = null;
         let createdInGcal = false;
         //log('Importing event:', dto);
         // If newOrder is true, create in Google Calendar first
         if (dto.newOrder) {
             // Build basic details for Google
-            const start = new Date(dto.eventDatetime);
-            const end = new Date(start.getTime() + 1 * 60 * 60 * 1000); // +2h default
+            //const { start, end } = buildGoogleCentralTimes(dto.eventDatetime, 60);
+            //const end = new Date(start.getTime() + 1 * 60 * 60 * 1000); // +2h default
+            const startLocal = dto.eventDatetime.replace(' ', 'T'); // "YYYY-MM-DDTHH:mm:ss.SSS"
+            const endLocal = (() => {
+                const d = new Date(eventInstant.getTime() + 60 * 60 * 1000);
+                // format back as "YYYY-MM-DDTHH:mm:ss.SSS"
+                const pad = (n, l = 2) => String(n).padStart(l, '0');
+                const local = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`;
+                return local;
+            })();
             const summary = (dto.calendarText?.split('\n')[0]?.trim())
                 || 'Catering Order';
             const description = dto.calendarText ?? dto.notes ?? '';
@@ -175,8 +298,8 @@ let EventsService = class EventsService {
                 summary,
                 description,
                 location: dto.venue ?? undefined,
-                start: start.toISOString(),
-                end: end.toISOString(),
+                start: startLocal ?? undefined,
+                end: endLocal ?? undefined,
                 timeZone: 'America/Chicago', // if you have one in dto
             });
             createdGcalId = ev.id ?? null;
@@ -258,6 +381,11 @@ let EventsService = class EventsService {
             else {
                 finalCustomerRel = null; // allowed: event without a customer (will mark incomplete below)
             }
+            const contractRel = await this.resolveContractRelation(dto.contractId ?? null, finalCustomerRel, tx);
+            const billingType = dto.billingType ?? (contractRel ? client_1.EventBillingType.contract : client_1.EventBillingType.per_event);
+            const billingStatus = dto.billingStatus ?? (billingType === client_1.EventBillingType.contract
+                ? client_1.EventBillingStatus.unbilled
+                : client_1.EventBillingStatus.unbilled);
             // Consider "missing price" if unitPrice is null/undefined OR not a finite number OR <= 0 (adjust if you allow 0)
             const hasMissingPriceInDto = (dto) => {
                 if (!dto.caterings?.length)
@@ -279,16 +407,20 @@ let EventsService = class EventsService {
             // ---------- B) Build base event payload (omit customer if none) ----------
             const baseEventData = {
                 gcalEventId: dto.gcalEventId ?? null,
-                event_datetime: new Date(dto.eventDatetime),
+                event_datetime: eventInstant,
                 venue: dto.venue ?? null,
                 notes: dto.notes ?? null,
                 calender_text: dto.calendarText ?? null,
                 is_delivery: dto.isDelivery ?? false,
                 delivery_charges: dto.deliveryCharges != null ? new client_1.Prisma.Decimal(dto.deliveryCharges) : null,
                 service_charges: dto.serviceCharges != null ? new client_1.Prisma.Decimal(dto.serviceCharges) : null,
+                discount: dto.discount != null ? new client_1.Prisma.Decimal(dto.discount) : null,
                 headcount_est: dto.headcountEst ?? null,
                 status: desiredStatusAtStart,
                 ...(finalCustomerRel ? { customer: finalCustomerRel } : {}), // <-- key bit
+                ...(contractRel ? { contract: contractRel } : {}),
+                billing_type: billingType,
+                billing_status: billingStatus,
             };
             // ---------- C) Create / Upsert event ----------
             const eventRow = dto.gcalEventId
@@ -297,7 +429,8 @@ let EventsService = class EventsService {
                     create: baseEventData,
                     update: {
                         ...baseEventData,
-                        status: desiredStatusAtStart, // <= force our computed status on edit
+                        status: desiredStatusAtStart,
+                        ...(contractRel ? {} : { contract: { disconnect: true } }),
                     },
                 })
                 : await tx.events.create({ data: baseEventData });
@@ -361,7 +494,8 @@ let EventsService = class EventsService {
             // ---------- E) Compute totals & return with includes ----------
             const delivery = eventRow.delivery_charges ?? new client_1.Prisma.Decimal(0);
             const service = eventRow.service_charges ?? new client_1.Prisma.Decimal(0);
-            const orderTotal = itemsSubtotal.add(delivery).add(service);
+            const discount = eventRow.discount ?? new client_1.Prisma.Decimal(0);
+            const orderTotal = itemsSubtotal.add(delivery).add(service).sub(discount);
             return tx.events.update({
                 where: { id: eventRow.id },
                 data: { order_total: orderTotal },
@@ -383,7 +517,7 @@ let EventsService = class EventsService {
     async getById(id) {
         const row = await this.prisma.events.findUnique({
             where: { id: BigInt(id) },
-            include: { customer: true },
+            include: { customer: true, contract: true },
         });
         if (!row)
             throw new common_1.NotFoundException(`Event ${id} not found`);
@@ -395,6 +529,7 @@ let EventsService = class EventsService {
             where: { id: BigInt(id) },
             include: {
                 customer: true,
+                contract: true,
                 event_caterings: {
                     orderBy: { id: 'asc' },
                     include: {
@@ -423,6 +558,7 @@ let EventsService = class EventsService {
             where: { gcalEventId: gcalId },
             include: {
                 customer: true,
+                contract: true,
                 event_caterings: {
                     include: {
                         category: true,
@@ -484,20 +620,34 @@ let EventsService = class EventsService {
         });
         const delivery = asNum(ev.delivery_charges) ?? 0;
         const service = asNum(ev.service_charges) ?? 0;
-        const grandTotal = itemsSubtotal + delivery + service;
+        const discount = asNum(ev.discount) ?? 0;
+        const grandTotal = itemsSubtotal + delivery + service - discount;
         return {
             id: Number(ev.id),
             gcalEventId: ev.gcalEventId,
             customer: ev.customer
                 ? { id: Number(ev.customer.id), name: ev.customer.name, email: ev.customer.email, phone: ev.customer.phone }
                 : null,
+            customerName: ev.customer?.name ?? null,
+            customerPhone: ev.customer?.phone ?? null,
+            customerEmail: ev.customer?.email ?? null,
             eventDate: ev.event_datetime,
             venue: ev.venue,
             notes: ev.notes,
             calendarText: ev.calender_text,
             isDelivery: !!ev.is_delivery,
             status: ev.status,
-            totals: { itemsSubtotal, delivery, service, grandTotal },
+            billingType: ev.billing_type,
+            billingStatus: ev.billing_status,
+            contract: ev.contract
+                ? {
+                    id: Number(ev.contract.id),
+                    name: ev.contract.name,
+                    code: ev.contract.code,
+                    billing_cycle: ev.contract.billing_cycle,
+                }
+                : null,
+            totals: { itemsSubtotal, delivery, service, discount, grandTotal },
             caterings,
         };
     }
@@ -709,6 +859,43 @@ let EventsService = class EventsService {
         const start = rows[0].event_datetime;
         const end = rows[rows.length - 1].event_datetime;
         return (0, invoice_mapper_1.mapRowsToInvoiceEnvelope)(rows, start, end);
+    }
+    /** Mark a single event (by numeric id) as archived */
+    async archiveById(id) {
+        const row = await this.prisma.events.findUnique({
+            where: { id: BigInt(id) },
+            select: { id: true },
+        });
+        if (!row)
+            throw new common_1.NotFoundException(`Event ${id} not found`);
+        return this.prisma.events.update({
+            where: { id: BigInt(id) },
+            data: { status: 'archived' },
+            select: { id: true, gcalEventId: true, status: true },
+        });
+    }
+    /** Mark a single event (by Google Calendar id) as archived */
+    async archiveByGcalId(gcalId) {
+        const found = await this.prisma.events.findUnique({
+            where: { gcalEventId: gcalId },
+            select: { id: true },
+        });
+        if (!found)
+            throw new common_1.NotFoundException(`Event with gcalEventId "${gcalId}" not found`);
+        return this.prisma.events.update({
+            where: { id: found.id },
+            data: { status: 'archived' },
+            select: { id: true, gcalEventId: true, status: true },
+        });
+    }
+    /** Optional bulk archive */
+    async archiveMany(ids) {
+        const bigIds = ids.map((n) => BigInt(n));
+        const res = await this.prisma.events.updateMany({
+            where: { id: { in: bigIds } },
+            data: { status: 'archived' },
+        });
+        return { count: res.count, status: 'archived' };
     }
 };
 exports.EventsService = EventsService;

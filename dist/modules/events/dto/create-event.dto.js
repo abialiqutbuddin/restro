@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateEventDto = exports.NewCustomerDto = void 0;
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
+const client_1 = require("@prisma/client");
 class NewCustomerDto {
 }
 exports.NewCustomerDto = NewCustomerDto;
@@ -62,7 +63,7 @@ __decorate([
     __metadata("design:type", String)
 ], CreateEventDto.prototype, "customerEmail", void 0);
 __decorate([
-    (0, class_validator_1.IsDateString)(),
+    (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateEventDto.prototype, "eventDate", void 0);
 __decorate([
@@ -115,3 +116,18 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateEventDto.prototype, "gcalEventId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.EventBillingType),
+    __metadata("design:type", String)
+], CreateEventDto.prototype, "billingType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.EventBillingStatus),
+    __metadata("design:type", String)
+], CreateEventDto.prototype, "billingStatus", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateEventDto.prototype, "contractId", void 0);

@@ -232,7 +232,7 @@ function mapPerItem(c) {
                 size: sizeName,
                 qty: orderQty,
                 pricePerQty: price / orderQty,
-                total: orderQty * price,
+                total: orderQty * (price / orderQty),
             });
             continue;
         }
@@ -249,7 +249,7 @@ function mapPerItem(c) {
                 size: sizeName,
                 qty,
                 pricePerQty: price / qty,
-                total: qty * price,
+                total: qty * (price / qty),
             });
             continue;
         }
@@ -266,7 +266,7 @@ function mapPerItem(c) {
                 size: sizeName,
                 qty,
                 pricePerQty: price / qty,
-                total: qty * price,
+                total: qty * (price / qty),
             });
         }
     }
@@ -346,6 +346,7 @@ function mapRowsToInvoiceEnvelope(rows, start, end) {
     let grandItemsSubtotal = 0;
     let grandDelivery = 0;
     let grandService = 0;
+    let grandDiscount = 0;
     for (const [date, events] of byDate.entries()) {
         const eventBlocks = [];
         for (const ev of events) {
@@ -353,7 +354,9 @@ function mapRowsToInvoiceEnvelope(rows, start, end) {
             const itemsSubtotal = cateringBlocks.reduce((s, x) => s + (x.subtotal || 0), 0);
             const delivery = asNumSafe(ev.delivery_charges);
             const service = asNumSafe(ev.service_charges);
-            const eventTotal = itemsSubtotal + delivery + service;
+            //const eventTotal = itemsSubtotal + delivery + service;
+            const discount = asNumSafe(ev.discount); // ✅ from event row
+            const eventTotal = itemsSubtotal + delivery + service - discount; // ✅ only here
             eventBlocks.push({
                 eventId: Number(ev.id),
                 gcalEventId: ev.gcalEventId ?? null,
@@ -361,12 +364,13 @@ function mapRowsToInvoiceEnvelope(rows, start, end) {
                 venue: ev.venue ?? null,
                 notes: ev.notes ?? null,
                 caterings: cateringBlocks,
-                extras: { delivery, service },
-                totals: { itemsSubtotal, delivery, service, eventTotal },
+                extras: { delivery, service, discount }, // ✅ surface at event-level
+                totals: { itemsSubtotal, delivery, service, discount, eventTotal },
             });
             grandItemsSubtotal += itemsSubtotal;
             grandDelivery += delivery;
             grandService += service;
+            grandDiscount += discount; // ✅ sum event discounts only
         }
         const dateTotal = eventBlocks.reduce((s, e) => s + e.totals.eventTotal, 0);
         dateGroups.push({ date, events: eventBlocks, dateTotal });
@@ -387,7 +391,8 @@ function mapRowsToInvoiceEnvelope(rows, start, end) {
             itemsSubtotal: grandItemsSubtotal,
             delivery: grandDelivery,
             service: grandService,
-            grandTotal: grandItemsSubtotal + grandDelivery + grandService,
+            discount: grandDiscount, // ✅
+            grandTotal: grandItemsSubtotal + grandDelivery + grandService - grandDiscount,
         },
     };
 }

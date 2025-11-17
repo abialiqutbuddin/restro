@@ -13,6 +13,7 @@ exports.ImportEventDto = exports.ImportNewCustomerDto = exports.ImportCateringDt
 // src/modules/events/dto/import-events.dto.ts
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
+const client_1 = require("@prisma/client");
 /* ---- enums ---- */
 var PricingUnitCode;
 (function (PricingUnitCode) {
@@ -208,7 +209,7 @@ __decorate([
     __metadata("design:type", ImportNewCustomerDto)
 ], ImportEventDto.prototype, "newCustomer", void 0);
 __decorate([
-    (0, class_validator_1.IsDateString)(),
+    (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], ImportEventDto.prototype, "eventDatetime", void 0);
 __decorate([
@@ -248,6 +249,13 @@ __decorate([
 ], ImportEventDto.prototype, "serviceCharges", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], ImportEventDto.prototype, "discount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     (0, class_transformer_1.Type)(() => Number),
     __metadata("design:type", Number)
@@ -263,6 +271,22 @@ __decorate([
     (0, class_transformer_1.Type)(() => Boolean),
     __metadata("design:type", Boolean)
 ], ImportEventDto.prototype, "newOrder", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.EventBillingType),
+    __metadata("design:type", String)
+], ImportEventDto.prototype, "billingType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.EventBillingStatus),
+    __metadata("design:type", String)
+], ImportEventDto.prototype, "billingStatus", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_transformer_1.Type)(() => Number),
+    __metadata("design:type", Number)
+], ImportEventDto.prototype, "contractId", void 0);
 __decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ValidateNested)({ each: true }),

@@ -17,6 +17,7 @@ export type InvoiceEnvelope = {
     itemsSubtotal: Money;
     delivery: Money;
     service: Money;
+    discount: Money;
     grandTotal: Money;
   };
 };
@@ -34,12 +35,13 @@ export type EventBlock = {
   venue: string | null;
   notes: string | null;
   caterings: CateringBlock[];
-  extras: { delivery: Money; service: Money };
+  extras: { delivery: Money; service: Money; discount: Money };  // ✅
   totals: {
     itemsSubtotal: Money;
     delivery: Money;
     service: Money;
-    eventTotal: Money;
+    discount: Money;      // ✅
+    eventTotal: Money;    // items + delivery + service - discount
   };
 };
 
@@ -137,12 +139,12 @@ function asNumSafe(v: unknown): number {
     v == null
       ? 0
       : typeof v === 'bigint'
-      ? Number(v)
-      : (v as any)?.constructor?.name === 'Decimal'
-      ? Number(v as any)
-      : typeof v === 'number'
-      ? v
-      : Number(v as any);
+        ? Number(v)
+        : (v as any)?.constructor?.name === 'Decimal'
+          ? Number(v as any)
+          : typeof v === 'number'
+            ? v
+            : Number(v as any);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -412,7 +414,7 @@ function mapPerItem(c: any): PerItemBlock {
         size: sizeName,
         qty: orderQty,
         pricePerQty: price / orderQty,
-        total: orderQty * price,
+        total: orderQty * (price / orderQty),
       });
       continue;
     }
@@ -430,7 +432,7 @@ function mapPerItem(c: any): PerItemBlock {
         size: sizeName,
         qty,
         pricePerQty: price / qty,
-        total: qty * price,
+        total: qty * (price / qty),
       });
       continue;
     }
@@ -450,7 +452,7 @@ function mapPerItem(c: any): PerItemBlock {
         size: sizeName,
         qty,
         pricePerQty: price / qty,
-        total: qty * price,
+        total: qty * (price / qty),
       });
     }
   }
@@ -534,6 +536,7 @@ export function mapRowsToInvoiceEnvelope(rows: any[], start: Date, end: Date): I
   let grandItemsSubtotal = 0;
   let grandDelivery = 0;
   let grandService = 0;
+  let grandDiscount = 0;
 
   for (const [date, events] of byDate.entries()) {
     const eventBlocks: EventBlock[] = [];
@@ -544,7 +547,10 @@ export function mapRowsToInvoiceEnvelope(rows: any[], start: Date, end: Date): I
 
       const delivery = asNumSafe(ev.delivery_charges);
       const service = asNumSafe(ev.service_charges);
-      const eventTotal = itemsSubtotal + delivery + service;
+      //const eventTotal = itemsSubtotal + delivery + service;
+      const discount = asNumSafe(ev.discount);                 // ✅ from event row
+
+      const eventTotal = itemsSubtotal + delivery + service - discount; // ✅ only here
 
       eventBlocks.push({
         eventId: Number(ev.id),
@@ -553,13 +559,14 @@ export function mapRowsToInvoiceEnvelope(rows: any[], start: Date, end: Date): I
         venue: ev.venue ?? null,
         notes: ev.notes ?? null,
         caterings: cateringBlocks,
-        extras: { delivery, service },
-        totals: { itemsSubtotal, delivery, service, eventTotal },
+        extras: { delivery, service, discount },               // ✅ surface at event-level
+        totals: { itemsSubtotal, delivery, service, discount, eventTotal },
       });
 
       grandItemsSubtotal += itemsSubtotal;
       grandDelivery += delivery;
       grandService += service;
+      grandDiscount += discount;                          // ✅ sum event discounts only
     }
 
     const dateTotal = eventBlocks.reduce<number>((s, e) => s + e.totals.eventTotal, 0);
@@ -583,7 +590,8 @@ export function mapRowsToInvoiceEnvelope(rows: any[], start: Date, end: Date): I
       itemsSubtotal: grandItemsSubtotal,
       delivery: grandDelivery,
       service: grandService,
-      grandTotal: grandItemsSubtotal + grandDelivery + grandService,
+      discount: grandDiscount,                               // ✅
+      grandTotal: grandItemsSubtotal + grandDelivery + grandService - grandDiscount,
     },
   };
 }

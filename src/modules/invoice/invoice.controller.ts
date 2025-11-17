@@ -24,9 +24,14 @@ export class InvoicesController {
     return this.invoicesService.findAll();
   }
 
-      @Get('last-number')
+  @Get('last-number')
   async getLastInvoiceNumber() {
     return this.invoicesService.getLastInvoiceNumber();
+  }
+
+  @Post(':invoiceNumber/mark-paid')
+  async markPaid(@Param('invoiceNumber') invoiceNumber: string) {
+    return this.invoicesService.markAsPaid(invoiceNumber);
   }
   
 

@@ -105,8 +105,8 @@ let GcalService = class GcalService {
             summary: params.summary,
             description: params.description,
             location: params.location,
-            start: this.wrapDate(params.start, params.timeZone),
-            end: this.wrapDate(params.end, params.timeZone),
+            start: this.wrapDate(params.start ?? '', params.timeZone),
+            end: this.wrapDate(params.end ?? '', params.timeZone),
         };
         try {
             const { data } = await this.calendar.events.insert({
@@ -124,7 +124,8 @@ let GcalService = class GcalService {
         if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
             return { date: value };
         }
-        return { dateTime: new Date(value).toISOString(), timeZone: tz ?? 'UTC' };
+        // No conversion — pass through the datetime string and timezone as-is
+        return { dateTime: value, timeZone: tz ?? 'America/Chicago' };
     }
 };
 exports.GcalService = GcalService;

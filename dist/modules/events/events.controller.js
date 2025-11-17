@@ -18,6 +18,7 @@ const class_validator_1 = require("class-validator");
 const events_service_1 = require("./events.service");
 const import_events_dto_1 = require("./dto/import-events.dto");
 const create_event_dto_1 = require("./dto/create-event.dto");
+const archive_events_dto_1 = require("./dto/archive-events.dto");
 const class_transformer_1 = require("class-transformer"); // <-- important
 const invoice_dto_1 = require("./dto/invoice.dto");
 class GoogleEventLiteDto {
@@ -100,6 +101,18 @@ let EventsController = class EventsController {
             includeEvents,
         });
     }
+    /** PATCH /api/events/:id/archive → marks status = 'archived' */
+    archiveById(id) {
+        return this.svc.archiveById(id);
+    }
+    /** PATCH /api/events/by-gcal/:gcalId/archive */
+    archiveByGcal(gcalId) {
+        return this.svc.archiveByGcalId(gcalId);
+    }
+    /** Optional bulk: POST /api/events/archive { ids: number[] } */
+    archiveMany(dto) {
+        return this.svc.archiveMany(dto.ids);
+    }
 };
 exports.EventsController = EventsController;
 __decorate([
@@ -171,6 +184,27 @@ __decorate([
     __metadata("design:paramtypes", [invoice_dto_1.InvoiceQueryDto]),
     __metadata("design:returntype", Promise)
 ], EventsController.prototype, "buildInvoice", null);
+__decorate([
+    (0, common_1.Patch)(':id/archive'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], EventsController.prototype, "archiveById", null);
+__decorate([
+    (0, common_1.Patch)('by-gcal/:gcalId/archive'),
+    __param(0, (0, common_1.Param)('gcalId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], EventsController.prototype, "archiveByGcal", null);
+__decorate([
+    (0, common_1.Post)('archive'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [archive_events_dto_1.ArchiveManyDto]),
+    __metadata("design:returntype", void 0)
+], EventsController.prototype, "archiveMany", null);
 exports.EventsController = EventsController = __decorate([
     (0, common_1.Controller)('events'),
     __metadata("design:paramtypes", [events_service_1.EventsService])

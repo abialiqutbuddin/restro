@@ -30,6 +30,9 @@ let InvoicesController = class InvoicesController {
     async getLastInvoiceNumber() {
         return this.invoicesService.getLastInvoiceNumber();
     }
+    async markPaid(invoiceNumber) {
+        return this.invoicesService.markAsPaid(invoiceNumber);
+    }
     async findOne(invoiceNumber) {
         return this.invoicesService.findOne(invoiceNumber);
     }
@@ -54,6 +57,13 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], InvoicesController.prototype, "getLastInvoiceNumber", null);
+__decorate([
+    (0, common_1.Post)(':invoiceNumber/mark-paid'),
+    __param(0, (0, common_1.Param)('invoiceNumber')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], InvoicesController.prototype, "markPaid", null);
 __decorate([
     (0, common_1.Get)(':invoiceNumber'),
     __param(0, (0, common_1.Param)('invoiceNumber')),

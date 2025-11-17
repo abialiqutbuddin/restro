@@ -6,7 +6,11 @@ import {
   IsDateString,
   IsObject,
   IsArray,
+  IsEnum,
+  IsInt,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { EventBillingStatus } from '@prisma/client';
 
 export class CreateInvoiceDto {
   @IsString()
@@ -72,4 +76,14 @@ export class CreateInvoiceDto {
 
   @IsArray()
   items!: any[];
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Type(() => Number)
+  eventIds?: number[];
+
+  @IsOptional()
+  @IsEnum(EventBillingStatus)
+  eventBillingStatus?: EventBillingStatus;
 }

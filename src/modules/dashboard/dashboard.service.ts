@@ -98,4 +98,52 @@ export class DashboardService {
       ORDER BY e.event_datetime ASC;
     `);
   }
+
+    async listByDateRange(from: Date, to: Date) {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT
+        DATE(e.event_datetime)               AS event_date,
+        e.id,
+        e.event_datetime,
+        e.venue,
+        e.status,
+        cust.name                            AS customer_name,
+        vt.grand_total,
+        vp.amount_paid,
+        (vt.grand_total - vp.amount_paid)    AS outstanding
+      FROM events e
+      LEFT JOIN customers       cust ON cust.id = e.customer_id
+      LEFT JOIN v_event_totals  vt   ON vt.event_id = e.id
+      LEFT JOIN v_event_payments vp  ON vp.event_id = e.id
+      WHERE e.event_datetime >= ? AND e.event_datetime < ?
+      ORDER BY event_date ASC, e.event_datetime ASC;
+    `, from, to);
+
+    // Group into { date: 'YYYY-MM-DD', items: [...] }
+    const byDate = new Map<string, any[]>();
+
+    for (const r of rows) {
+      // event_date may come as Date or string depending on MySQL driver config
+      const d: string = r.event_date instanceof Date
+        ? r.event_date.toISOString().slice(0, 10)
+        : String(r.event_date); // already 'YYYY-MM-DD'
+
+      const item = {
+        id: r.id,
+        event_datetime: r.event_datetime,
+        venue: r.venue ?? null,
+        status: r.status ?? null,
+        customer_name: r.customer_name ?? null,
+        grand_total: Number(r.grand_total ?? 0),
+        amount_paid: Number(r.amount_paid ?? 0),
+        outstanding: Number(r.outstanding ?? 0),
+      };
+
+      if (!byDate.has(d)) byDate.set(d, []);
+      byDate.get(d)!.push(item);
+    }
+
+    return Array.from(byDate.entries()).map(([date, items]) => ({ date, items }));
+  }
+  
 }

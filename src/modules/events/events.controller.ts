@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { IsArray, IsDateString, IsEmail, IsNumber, IsOptional, IsString, ArrayNotEmpty, ValidateNested } from 'class-validator';
 import { EventsService } from './events.service';
 import { ImportEventDto } from './dto/import-events.dto';
 import { CreateEventDto } from './dto/create-event.dto';
+import { ArchiveManyDto } from './dto/archive-events.dto';
 import { Type } from 'class-transformer'; // <-- important
 import { InvoiceQueryDto } from './dto/invoice.dto';
 
@@ -87,26 +88,44 @@ export class EventsController {
     return this.svc.deleteByGcalId(gcalId);
   }
 
-@Get('invoice/build')
-async buildInvoice(@Query() q: InvoiceQueryDto) {
-  const includeEvents = (q.includeEvents ?? 'true').toLowerCase() === 'true';
+  @Get('invoice/build')
+  async buildInvoice(@Query() q: InvoiceQueryDto) {
+    const includeEvents = (q.includeEvents ?? 'true').toLowerCase() === 'true';
 
-  const eventIds = q.eventIds ?? []; // already string[]
-  if (eventIds.length) {
-    return this.svc.buildInvoiceForEvents(eventIds, includeEvents); // expects string[]
+    const eventIds = q.eventIds ?? []; // already string[]
+    if (eventIds.length) {
+      return this.svc.buildInvoiceForEvents(eventIds, includeEvents); // expects string[]
+    }
+
+    if (!q.customerId || !q.start || !q.end) {
+      return { error: 'Provide either eventIds OR customerId + start + end (ISO).' };
+    }
+
+    return this.svc.buildInvoiceForCustomerRange({
+      customerId: q.customerId,
+      start: new Date(q.start),
+      end: new Date(q.end),
+      includeEvents,
+    });
   }
 
-  if (!q.customerId || !q.start || !q.end) {
-    return { error: 'Provide either eventIds OR customerId + start + end (ISO).' };
+  /** PATCH /api/events/:id/archive → marks status = 'archived' */
+  @Patch(':id/archive')
+  archiveById(@Param('id', ParseIntPipe) id: number) {
+    return this.svc.archiveById(id);
   }
 
-  return this.svc.buildInvoiceForCustomerRange({
-    customerId: q.customerId,
-    start: new Date(q.start),
-    end: new Date(q.end),
-    includeEvents,
-  });
-}
+  /** PATCH /api/events/by-gcal/:gcalId/archive */
+  @Patch('by-gcal/:gcalId/archive')
+  archiveByGcal(@Param('gcalId') gcalId: string) {
+    return this.svc.archiveByGcalId(gcalId);
+  }
+
+  /** Optional bulk: POST /api/events/archive { ids: number[] } */
+  @Post('archive')
+  archiveMany(@Body() dto: ArchiveManyDto) {
+    return this.svc.archiveMany(dto.ids);
+  }
 
   // @Get('invoice/by-customer-range')
   // async buildInvoiceByCustomerRange(@Query() q: InvoiceRangeDto) {

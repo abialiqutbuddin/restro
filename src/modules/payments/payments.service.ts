@@ -108,14 +108,54 @@ export class PaymentsService {
      ========================= */
 
   /** GET /events/by-gcal/:gcalId/payments */
+  // async list(gcalId: string) {
+  //   await this.ensureEventByGcal(gcalId);
+  //   const payments = await this.prisma.event_payments.findMany({
+  //     where: { event_gcal_id: gcalId },
+  //     orderBy: { paid_at: 'desc' },
+  //   });
+  //   const summary = await this.summary(gcalId);
+  //   return { payments, summary };
+  // }
+  // in your service
   async list(gcalId: string) {
+    // ensure the event exists (you already do this)
     await this.ensureEventByGcal(gcalId);
-    const payments = await this.prisma.event_payments.findMany({
-      where: { event_gcal_id: gcalId },
-      orderBy: { paid_at: 'desc' },
-    });
+
+    // fetch event (with its customer) + payments in parallel
+    const [ev, payments] = await this.prisma.$transaction([
+      this.prisma.events.findUnique({
+        where: { gcalEventId: gcalId },
+        select: {
+          // we only need the customer record; you can add more event fields if needed
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              default_venue: true,
+              notes: true,
+              created_at: true,
+              updated_at: true,
+            },
+          },
+        },
+      }),
+      this.prisma.event_payments.findMany({
+        where: { event_gcal_id: gcalId },
+        orderBy: { paid_at: 'desc' },
+      }),
+    ]);
+
+    // summary may run its own queries, keep it outside the $transaction if it already uses prisma internally
     const summary = await this.summary(gcalId);
-    return { payments, summary };
+
+    return {
+      payments,
+      summary,
+      customer: ev?.customer ?? null,  // <- your customer details (or null if none)
+    };
   }
 
   /** POST /events/by-gcal/:gcalId/payments */
@@ -123,7 +163,36 @@ export class PaymentsService {
     return this.prisma.$transaction(async (tx) => {
       // 0) Ensure event exists
       const ev = await this.ensureEventByGcalTx(tx, gcalId);
-      console.log(dto.discount);
+
+      const cust = dto.customer;
+      if (cust && cust.email?.trim() && cust.phone?.trim()) {
+        const email = cust.email.trim();
+        const phone = cust.phone.trim();
+
+        // Prefer the event's linked customer_id
+        if (ev.customer_id) {
+          await tx.customers.update({
+            where: { id: BigInt(ev.customer_id) },
+            data: { email, phone },
+          });
+        } else if (cust.id) {
+          // If client sent a customer id, attach + update
+          const cid = BigInt(cust.id);
+          await tx.customers.update({
+            where: { id: cid },
+            data: { email, phone },
+          });
+          await tx.events.update({
+            where: { gcalEventId: gcalId },
+            data: { customer_id: cid },
+          });
+        } else {
+          // (Optional) If no link & no id, you could create-or-skip.
+          // await tx.customers.create({ data: { name: cust.name ?? '', email, phone } })
+          // and then set events.customer_id = new id. Skipping as per your ask.
+        }
+      }
+
       // 1) Apply discount first (if provided)
       if (dto.discount != null) {
         console.log('[PaymentsService] Received discount in DTO:', dto.discount);

@@ -26,4 +26,22 @@ export class DashboardController {
 
     return { range: { from, to }, kpis, catRevenue, topItems, today, tomorrow };
   }
+
+    @Get('range-list')
+  async rangeList(
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
+  ) {
+    const now = new Date();
+    const from = fromStr ? new Date(fromStr) : new Date(now.getFullYear(), now.getMonth(), 1);
+    // make `to` exclusive (next day midnight) if only a date was passed
+    const toRaw = toStr ? new Date(toStr) : new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const to = new Date(toRaw); // clone
+
+    return {
+      range: { from, to },
+      days: await this.svc.listByDateRange(from, to),
+    };
+  }
+  
 }

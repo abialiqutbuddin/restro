@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEmail,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -12,6 +13,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { EventBillingStatus, EventBillingType } from '@prisma/client';
 
 export class NewCustomerDto {
   @IsString()
@@ -47,7 +49,7 @@ export class CreateEventDto {
   @IsOptional() @IsEmail()  customerEmail?: string;
 
   // --- event fields ---
-  @IsDateString()
+  @IsString()
   eventDate!: string;
 
   @IsOptional() @IsString() venue?: string;
@@ -70,4 +72,16 @@ export class CreateEventDto {
 
   @IsOptional() @IsString()
   gcalEventId?: string;
+
+  @IsOptional()
+  @IsEnum(EventBillingType)
+  billingType?: EventBillingType;
+
+  @IsOptional()
+  @IsEnum(EventBillingStatus)
+  billingStatus?: EventBillingStatus;
+
+  @IsOptional()
+  @IsInt()
+  contractId?: number;
 }

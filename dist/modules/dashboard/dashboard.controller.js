@@ -33,6 +33,17 @@ let DashboardController = class DashboardController {
         ]);
         return { range: { from, to }, kpis, catRevenue, topItems, today, tomorrow };
     }
+    async rangeList(fromStr, toStr) {
+        const now = new Date();
+        const from = fromStr ? new Date(fromStr) : new Date(now.getFullYear(), now.getMonth(), 1);
+        // make `to` exclusive (next day midnight) if only a date was passed
+        const toRaw = toStr ? new Date(toStr) : new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        const to = new Date(toRaw); // clone
+        return {
+            range: { from, to },
+            days: await this.svc.listByDateRange(from, to),
+        };
+    }
 };
 exports.DashboardController = DashboardController;
 __decorate([
@@ -44,6 +55,14 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", Promise)
 ], DashboardController.prototype, "getDashboard", null);
+__decorate([
+    (0, common_1.Get)('range-list'),
+    __param(0, (0, common_1.Query)('from')),
+    __param(1, (0, common_1.Query)('to')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], DashboardController.prototype, "rangeList", null);
 exports.DashboardController = DashboardController = __decorate([
     (0, common_1.Controller)('dashboard'),
     __metadata("design:paramtypes", [dashboard_service_1.DashboardService])

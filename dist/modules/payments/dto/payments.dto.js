@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UpdatePaymentDto = exports.CreatePaymentDto = exports.PaymentStatusDto = exports.PaymentMethodDto = void 0;
+exports.UpdatePaymentDto = exports.CreatePaymentDto = exports.PaymentCustomerDto = exports.PaymentStatusDto = exports.PaymentMethodDto = void 0;
 // src/modules/payments/dto/payments.dto.ts
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
@@ -27,6 +27,29 @@ var PaymentStatusDto;
     PaymentStatusDto["failed"] = "failed";
     PaymentStatusDto["refunded"] = "refunded";
 })(PaymentStatusDto || (exports.PaymentStatusDto = PaymentStatusDto = {}));
+class PaymentCustomerDto {
+}
+exports.PaymentCustomerDto = PaymentCustomerDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], PaymentCustomerDto.prototype, "id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], PaymentCustomerDto.prototype, "name", void 0);
+__decorate([
+    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], PaymentCustomerDto.prototype, "email", void 0);
+__decorate([
+    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], PaymentCustomerDto.prototype, "phone", void 0);
 class CreatePaymentDto {
 }
 exports.CreatePaymentDto = CreatePaymentDto;
@@ -65,6 +88,12 @@ __decorate([
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], CreatePaymentDto.prototype, "discount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => PaymentCustomerDto),
+    __metadata("design:type", PaymentCustomerDto)
+], CreatePaymentDto.prototype, "customer", void 0);
 class UpdatePaymentDto {
 }
 exports.UpdatePaymentDto = UpdatePaymentDto;

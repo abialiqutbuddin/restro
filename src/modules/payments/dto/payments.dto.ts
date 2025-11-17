@@ -1,9 +1,23 @@
 // src/modules/payments/dto/payments.dto.ts
-import { IsEnum, IsNumber, IsOptional, IsString, IsDateString, ValidateIf, Min, IsIn } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, IsDateString, ValidateIf, Min, IsIn, ValidateNested, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum PaymentMethodDto { cash='cash', check='check', credit='credit', others='others' }
 export enum PaymentStatusDto { pending='pending', succeeded='succeeded', failed='failed', refunded='refunded' }
+
+export class PaymentCustomerDto {
+  @IsOptional() @IsString()
+  id?: string;
+
+  @IsOptional() @IsString()
+  name?: string;
+
+  @IsNotEmpty() @IsString()
+  email!: string;
+
+  @IsNotEmpty() @IsString()
+  phone!: string;
+}
 
 export class CreatePaymentDto {
   @IsEnum(PaymentMethodDto) method!: PaymentMethodDto;
@@ -24,7 +38,12 @@ export class CreatePaymentDto {
   @IsOptional() @IsString()
   notes?: string;
 
-  @IsOptional() @IsNumber() discount?: number;  // absolute amount to SET on the event
+  @IsOptional() @IsNumber() discount?: number;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PaymentCustomerDto)
+  customer?: PaymentCustomerDto;
 
 }
 
