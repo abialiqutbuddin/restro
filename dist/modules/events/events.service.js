@@ -35,35 +35,12 @@ let EventsService = class EventsService {
         this.customers = customers;
         this.gcal = gcal;
     }
-    async resolveContractRelation(contractId, customerRel, client = this.prisma) {
-        if (contractId == null)
-            return null;
-        if (!customerRel?.connect?.id) {
-            throw new common_1.BadRequestException('Contract requires an attached customer');
-        }
-        const id = BigInt(contractId);
-        const contract = await client.contracts.findUnique({
-            where: { id },
-            select: { id: true, customer_id: true, is_active: true },
-        });
-        if (!contract) {
-            throw new common_1.NotFoundException(`Contract ${contractId} not found`);
-        }
-        if (!contract.is_active) {
-            throw new common_1.BadRequestException('Contract is inactive');
-        }
-        if (contract.customer_id !== customerRel.connect.id) {
-            throw new common_1.BadRequestException('Contract belongs to a different customer');
-        }
-        return { connect: { id: contract.id } };
-    }
     /** List events including customer + nested items */
     list() {
         return this.prisma.events.findMany({
             orderBy: { event_datetime: 'desc' },
             include: {
                 customer: true,
-                contract: true,
                 event_caterings: {
                     include: {
                         event_catering_orders: {
@@ -102,11 +79,7 @@ let EventsService = class EventsService {
                         }
                         : null,
         });
-        const contractRel = await this.resolveContractRelation(dto.contractId ?? null, customerRel);
-        const billingType = dto.billingType ?? (contractRel ? client_1.EventBillingType.contract : client_1.EventBillingType.per_event);
-        const billingStatus = dto.billingStatus ?? (billingType === client_1.EventBillingType.contract
-            ? client_1.EventBillingStatus.unbilled
-            : client_1.EventBillingStatus.unbilled);
+        const billingStatus = dto.billingStatus ?? client_1.EventBillingStatus.unbilled;
         return this.prisma.events.create({
             data: {
                 gcalEventId: dto.gcalEventId ?? null,
@@ -120,11 +93,9 @@ let EventsService = class EventsService {
                 headcount_est: dto.headcountEst ?? null,
                 status: 'incomplete',
                 ...(customerRel ? { customer: customerRel } : {}),
-                ...(contractRel ? { contract: contractRel } : {}),
-                billing_type: billingType,
                 billing_status: billingStatus,
             },
-            include: { customer: true, contract: true },
+            include: { customer: true },
         });
     }
     /** Check many Google event IDs against DB */
@@ -143,10 +114,8 @@ let EventsService = class EventsService {
                 status: true,
                 event_datetime: true,
                 calender_text: true,
-                billing_type: true,
                 billing_status: true,
                 customer: { select: { name: true } }, // 👈 include customer name
-                contract: { select: { id: true, name: true, code: true } },
             },
         });
         // Keep list of active (non-archived) ids only
@@ -182,10 +151,7 @@ let EventsService = class EventsService {
                 isModified: same === null ? null : !same,
                 // Only include when the event exists (i.e., not new) and name is present
                 customerName: ev?.customer?.name?.trim() ? ev.customer.name.trim() : undefined,
-                billingType: ev?.billing_type ?? undefined,
                 billingStatus: ev?.billing_status ?? undefined,
-                contractId: ev?.contract?.id ? Number(ev.contract.id) : undefined,
-                contractName: ev?.contract?.name ?? undefined,
             };
         }
         return result;
@@ -259,7 +225,6 @@ let EventsService = class EventsService {
             where: { gcalEventId: id },
             include: {
                 customer: true,
-                contract: true,
                 event_caterings: {
                     include: {
                         event_catering_orders: { include: { event_catering_menu_items: true } },
@@ -381,11 +346,7 @@ let EventsService = class EventsService {
             else {
                 finalCustomerRel = null; // allowed: event without a customer (will mark incomplete below)
             }
-            const contractRel = await this.resolveContractRelation(dto.contractId ?? null, finalCustomerRel, tx);
-            const billingType = dto.billingType ?? (contractRel ? client_1.EventBillingType.contract : client_1.EventBillingType.per_event);
-            const billingStatus = dto.billingStatus ?? (billingType === client_1.EventBillingType.contract
-                ? client_1.EventBillingStatus.unbilled
-                : client_1.EventBillingStatus.unbilled);
+            const billingStatus = dto.billingStatus ?? client_1.EventBillingStatus.unbilled;
             // Consider "missing price" if unitPrice is null/undefined OR not a finite number OR <= 0 (adjust if you allow 0)
             const hasMissingPriceInDto = (dto) => {
                 if (!dto.caterings?.length)
@@ -418,8 +379,6 @@ let EventsService = class EventsService {
                 headcount_est: dto.headcountEst ?? null,
                 status: desiredStatusAtStart,
                 ...(finalCustomerRel ? { customer: finalCustomerRel } : {}), // <-- key bit
-                ...(contractRel ? { contract: contractRel } : {}),
-                billing_type: billingType,
                 billing_status: billingStatus,
             };
             // ---------- C) Create / Upsert event ----------
@@ -430,7 +389,6 @@ let EventsService = class EventsService {
                     update: {
                         ...baseEventData,
                         status: desiredStatusAtStart,
-                        ...(contractRel ? {} : { contract: { disconnect: true } }),
                     },
                 })
                 : await tx.events.create({ data: baseEventData });
@@ -517,7 +475,7 @@ let EventsService = class EventsService {
     async getById(id) {
         const row = await this.prisma.events.findUnique({
             where: { id: BigInt(id) },
-            include: { customer: true, contract: true },
+            include: { customer: true },
         });
         if (!row)
             throw new common_1.NotFoundException(`Event ${id} not found`);
@@ -529,7 +487,6 @@ let EventsService = class EventsService {
             where: { id: BigInt(id) },
             include: {
                 customer: true,
-                contract: true,
                 event_caterings: {
                     orderBy: { id: 'asc' },
                     include: {
@@ -558,7 +515,6 @@ let EventsService = class EventsService {
             where: { gcalEventId: gcalId },
             include: {
                 customer: true,
-                contract: true,
                 event_caterings: {
                     include: {
                         category: true,
@@ -637,16 +593,7 @@ let EventsService = class EventsService {
             calendarText: ev.calender_text,
             isDelivery: !!ev.is_delivery,
             status: ev.status,
-            billingType: ev.billing_type,
             billingStatus: ev.billing_status,
-            contract: ev.contract
-                ? {
-                    id: Number(ev.contract.id),
-                    name: ev.contract.name,
-                    code: ev.contract.code,
-                    billing_cycle: ev.contract.billing_cycle,
-                }
-                : null,
             totals: { itemsSubtotal, delivery, service, discount, grandTotal },
             caterings,
         };

@@ -48,13 +48,14 @@ export class PaymentsService {
       _sum: { amount: true },
     });
 
-    const orderTotal = new Prisma.Decimal(ev?.order_total ?? 0);
+    const netTotal = new Prisma.Decimal(ev?.order_total ?? 0);
     const discount = new Prisma.Decimal(ev?.discount ?? 0);
     const paid = new Prisma.Decimal(agg._sum.amount ?? 0);
-    const balance = orderTotal.sub(discount).sub(paid);
+    const grossTotal = netTotal.add(discount);
+    const balance = netTotal.sub(paid);
 
     return {
-      orderTotal: Number(orderTotal),
+      orderTotal: Number(grossTotal),
       discount: Number(discount),
       paid: Number(paid),
       balance: Number(balance),
@@ -224,10 +225,12 @@ export class PaymentsService {
           `[PaymentsService] ✅ Discount valid — updating events.discount = ${newDisc.toString()}`,
         );
 
+        const newTotal = orderTotal.sub(newDisc);
+
         // Perform update
         const updated = await tx.events.update({
           where: { gcalEventId: gcalId },
-          data: { discount: new Prisma.Decimal(newDisc) },
+          data: { order_total:newTotal,discount: new Prisma.Decimal(newDisc) },
           select: { id: true, discount: true },
         });
 

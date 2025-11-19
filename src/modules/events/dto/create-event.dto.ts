@@ -13,7 +13,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { EventBillingStatus, EventBillingType } from '@prisma/client';
+import { EventBillingStatus } from '@prisma/client';
 
 export class NewCustomerDto {
   @IsString()
@@ -74,14 +74,6 @@ export class CreateEventDto {
   gcalEventId?: string;
 
   @IsOptional()
-  @IsEnum(EventBillingType)
-  billingType?: EventBillingType;
-
-  @IsOptional()
   @IsEnum(EventBillingStatus)
   billingStatus?: EventBillingStatus;
-
-  @IsOptional()
-  @IsInt()
-  contractId?: number;
 }

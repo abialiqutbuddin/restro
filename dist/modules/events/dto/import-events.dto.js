@@ -273,20 +273,9 @@ __decorate([
 ], ImportEventDto.prototype, "newOrder", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsEnum)(client_1.EventBillingType),
-    __metadata("design:type", String)
-], ImportEventDto.prototype, "billingType", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsEnum)(client_1.EventBillingStatus),
     __metadata("design:type", String)
 ], ImportEventDto.prototype, "billingStatus", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsInt)(),
-    (0, class_transformer_1.Type)(() => Number),
-    __metadata("design:type", Number)
-], ImportEventDto.prototype, "contractId", void 0);
 __decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ValidateNested)({ each: true }),

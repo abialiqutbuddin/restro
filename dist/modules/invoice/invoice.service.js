@@ -133,7 +133,6 @@ let InvoicesService = class InvoicesService {
             where: { id: { in: ids } },
             select: {
                 id: true,
-                billing_type: true,
                 invoiceEvents: { select: { invoiceId: true } },
                 order_total: true,
             },
@@ -147,12 +146,6 @@ let InvoicesService = class InvoicesService {
         const alreadyLinked = events.filter((ev) => ev.invoiceEvents.length);
         if (alreadyLinked.length) {
             throw new common_1.BadRequestException(`Events already invoiced: ${alreadyLinked.map((ev) => ev.id.toString()).join(', ')}`);
-        }
-        const nonContract = events.filter((ev) => ev.billing_type !== client_1.EventBillingType.contract);
-        if (nonContract.length) {
-            throw new common_1.BadRequestException(`Only contractual events can be invoiced. Offending IDs: ${nonContract
-                .map((ev) => ev.id.toString())
-                .join(', ')}`);
         }
         return events;
     }

@@ -24,11 +24,6 @@ enum PaymentStatus {
   refunded
 }
 
-enum EventBillingType {
-  per_event
-  contract
-}
-
 enum EventBillingStatus {
   unbilled
   invoiced
@@ -51,7 +46,6 @@ model customers {
   @@index([name])
   @@index([email])
   @@index([phone])
-  contracts contracts[]
 }
 
 model users {
@@ -124,30 +118,10 @@ model category_unit {
 }
 
 /// ---------- Core ----------
-model contracts {
-  id            BigInt   @id @default(autoincrement())
-  customer_id   BigInt
-  name          String   @db.VarChar(150)
-  code          String   @unique @db.VarChar(100)
-  billing_cycle String   @db.VarChar(50) @default("monthly")
-  start_date    DateTime
-  end_date      DateTime?
-  is_active     Boolean  @default(true)
-  notes         String?  @db.Text
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
-
-  customer customers @relation(fields: [customer_id], references: [id], onDelete: Cascade)
-  events   events[]
-
-  @@index([customer_id])
-}
-
 model events {
   id               BigInt   @id @default(autoincrement())
   gcalEventId      String?  @unique(map: "uniq_events_gcal_event_id")
   customer_id      BigInt?
-  contract_id      BigInt?
   event_datetime   DateTime
   venue            String?  @db.VarChar(200)
   delivery_charges Decimal? @db.Decimal(12, 2)
@@ -161,20 +135,17 @@ model events {
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
   discount         Decimal? @db.Decimal(12, 2)
-  billing_type     EventBillingType   @default(per_event)
   billing_status   EventBillingStatus @default(unbilled)
 
   // NEW relation
   customer        customers? @relation(fields: [customer_id], references: [id], onDelete: SetNull)
-  contract        contracts? @relation(fields: [contract_id], references: [id], onDelete: SetNull)
   event_caterings event_caterings[]
   payments         event_payments[]       // <— relation
   invoiceEvents    InvoiceEvent[]
 
 
   @@index([customer_id])
-  @@index([contract_id])
-  @@index([billing_type, billing_status, event_datetime])
+  @@index([billing_status, event_datetime])
 }
 
 // --- event_payments: one row per payment/attempt ---

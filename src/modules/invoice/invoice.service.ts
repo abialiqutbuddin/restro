@@ -1,6 +1,6 @@
 // src/invoices/invoices.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { EventBillingStatus, EventBillingType, Prisma } from '@prisma/client';
+import { EventBillingStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 
@@ -141,7 +141,6 @@ export class InvoicesService {
       where: { id: { in: ids } },
       select: {
         id: true,
-        billing_type: true,
         invoiceEvents: { select: { invoiceId: true } },
         order_total: true,
       },
@@ -158,15 +157,6 @@ export class InvoicesService {
     if (alreadyLinked.length) {
       throw new BadRequestException(
         `Events already invoiced: ${alreadyLinked.map((ev) => ev.id.toString()).join(', ')}`,
-      );
-    }
-
-    const nonContract = events.filter((ev) => ev.billing_type !== EventBillingType.contract);
-    if (nonContract.length) {
-      throw new BadRequestException(
-        `Only contractual events can be invoiced. Offending IDs: ${nonContract
-          .map((ev) => ev.id.toString())
-          .join(', ')}`,
       );
     }
 

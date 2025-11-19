@@ -13,7 +13,6 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { SquareModule } from './modules/sqaure/square.module';
 import { InvoicesModule } from './modules/invoice/invoice.module';
 import { EmailModule } from './modules/email/email.module';
-import { ContractsModule } from './modules/contracts/contracts.module';
 
 @Module({
   imports: [
@@ -30,7 +29,6 @@ import { ContractsModule } from './modules/contracts/contracts.module';
     SquareModule,
     InvoicesModule,
     EmailModule,
-    ContractsModule,
   ],
   controllers: [SeedController],
 })

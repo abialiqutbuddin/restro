@@ -5,7 +5,7 @@ import {
   ValidationArguments, ValidationOptions
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { EventBillingStatus, EventBillingType } from '@prisma/client';
+import { EventBillingStatus } from '@prisma/client';
 
 /* ---- enums ---- */
 export enum PricingUnitCode {
@@ -124,17 +124,8 @@ export class ImportEventDto {
   newOrder?: boolean;
 
   @IsOptional()
-  @IsEnum(EventBillingType)
-  billingType?: EventBillingType;
-
-  @IsOptional()
   @IsEnum(EventBillingStatus)
   billingStatus?: EventBillingStatus;
-
-  @IsOptional()
-  @IsInt()
-  @Type(() => Number)
-  contractId?: number;
 
   @IsArray()
   @ValidateNested({ each: true })

@@ -49,12 +49,13 @@ let PaymentsService = class PaymentsService {
             where: { event_gcal_id: gcalId, status: 'succeeded' },
             _sum: { amount: true },
         });
-        const orderTotal = new client_1.Prisma.Decimal(ev?.order_total ?? 0);
+        const netTotal = new client_1.Prisma.Decimal(ev?.order_total ?? 0);
         const discount = new client_1.Prisma.Decimal(ev?.discount ?? 0);
         const paid = new client_1.Prisma.Decimal(agg._sum.amount ?? 0);
-        const balance = orderTotal.sub(discount).sub(paid);
+        const grossTotal = netTotal.add(discount);
+        const balance = netTotal.sub(paid);
         return {
-            orderTotal: Number(orderTotal),
+            orderTotal: Number(grossTotal),
             discount: Number(discount),
             paid: Number(paid),
             balance: Number(balance),
@@ -196,10 +197,11 @@ let PaymentsService = class PaymentsService {
                     throw new common_1.BadRequestException(`discount cannot exceed order total (${orderTotal.toString()})`);
                 }
                 console.log(`[PaymentsService] ✅ Discount valid — updating events.discount = ${newDisc.toString()}`);
+                const newTotal = orderTotal.sub(newDisc);
                 // Perform update
                 const updated = await tx.events.update({
                     where: { gcalEventId: gcalId },
-                    data: { discount: new client_1.Prisma.Decimal(newDisc) },
+                    data: { order_total: newTotal, discount: new client_1.Prisma.Decimal(newDisc) },
                     select: { id: true, discount: true },
                 });
                 console.log('[PaymentsService] ✅ Event discount updated successfully:', updated);
