@@ -40,8 +40,8 @@ let GcalService = class GcalService {
     async listRange(params) {
         const calendarId = params.calendarId || 'primary';
         const maxResults = params.maxPerPage ?? 250;
-        const timeMin = this.toRfc3339(params.start, 'start');
-        const timeMax = this.toRfc3339(params.end, 'end');
+        const timeMin = this.toCstRfc3339(params.start, false);
+        const timeMax = this.toCstRfc3339(params.end, true);
         // Titles to ignore (lowercased, trimmed)
         const ignoredTitles = new Set([
             'barbq village marketing meeting',
@@ -86,18 +86,39 @@ let GcalService = class GcalService {
         } while (pageToken);
         return all;
     }
-    toRfc3339(value, label) {
-        const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
-        const iso = /^\d{4}-\d{2}-\d{2}T.+Z$/i;
-        if (dateOnly.test(value)) {
-            return label === 'start' ? `${value}T00:00:00Z` : `${value}T23:59:59Z`;
+    /** Light variant: returns only unique event ids for the range */
+    async listIdsRange(params) {
+        const events = await this.listRange(params);
+        const ids = new Set();
+        for (const ev of events) {
+            if (ev.eventId)
+                ids.add(ev.eventId);
         }
-        if (iso.test(value))
-            return value;
-        const d = new Date(value);
-        if (isNaN(d.getTime()))
-            throw new common_1.BadRequestException(`Invalid ${label} date: ${value}`);
-        return d.toISOString();
+        return Array.from(ids);
+    }
+    /**
+     * Normalize inbound date/datetime to RFC3339 with CST offset.
+     * Accepts:
+     *  - "YYYY-MM-DD"
+     *  - ISO strings like "2025-11-20T05:00:00.000Z" or without Z
+     */
+    toCstRfc3339(dateStr, isEnd = false) {
+        if (!dateStr || !dateStr.trim()) {
+            throw new common_1.BadRequestException('Invalid date');
+        }
+        const raw = dateStr.trim();
+        // If it already includes 'T', parse directly; else append midnight
+        const parsed = raw.includes('T') ? new Date(raw) : new Date(`${raw}T00:00:00`);
+        if (isNaN(parsed.getTime())) {
+            throw new common_1.BadRequestException(`Invalid date: ${dateStr}`);
+        }
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+        const dd = String(parsed.getDate()).padStart(2, '0');
+        const hh = isEnd ? "23" : "00";
+        const min = isEnd ? "59" : "00";
+        const ss = isEnd ? "59" : "00";
+        return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}-06:00`;
     }
     async createEvent(params) {
         const calendarId = params.calendarId || 'primary';

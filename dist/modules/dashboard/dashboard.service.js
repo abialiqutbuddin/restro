@@ -32,7 +32,8 @@ let DashboardService = class DashboardService {
       FROM v_event_totals vt
       LEFT JOIN v_event_payments vp ON vp.event_id = vt.event_id
       LEFT JOIN events e             ON e.id = vt.event_id
-      WHERE vt.event_datetime >= ? AND vt.event_datetime < ?;
+      WHERE vt.event_datetime >= ? AND vt.event_datetime < ?
+        AND e.status <> 'archived';
     `, from, to);
         return row ?? {
             total_events: 0, items_total: 0, grand_total: 0, amount_paid: 0,
@@ -48,6 +49,7 @@ let DashboardService = class DashboardService {
       JOIN category c                ON c.id = ec.category_id
       JOIN event_catering_orders eco ON eco.event_catering_id = ec.id
       WHERE e.event_datetime >= ? AND e.event_datetime < ?
+        AND e.status <> 'archived'
       GROUP BY c.id, c.name
       ORDER BY revenue DESC;
     `, from, to);
@@ -65,6 +67,7 @@ let DashboardService = class DashboardService {
         JOIN event_catering_menu_items ecmi ON ecmi.event_catering_order_id = eco.id
         JOIN menu_items mi                  ON mi.id = ecmi.item_id
         WHERE e.event_datetime >= ? AND e.event_datetime < ?
+          AND e.status <> 'archived'
         GROUP BY c.id, c.name, mi.id, mi.name
       ),
       ranked AS (
@@ -88,6 +91,7 @@ let DashboardService = class DashboardService {
       LEFT JOIN v_event_totals vt ON vt.event_id = e.id
       LEFT JOIN v_event_payments vp ON vp.event_id = e.id
       WHERE DATE(e.event_datetime) = CURDATE()
+        AND e.status <> 'archived'
       ORDER BY e.event_datetime ASC;
     `);
     }
@@ -102,6 +106,7 @@ let DashboardService = class DashboardService {
       LEFT JOIN v_event_totals vt ON vt.event_id = e.id
       LEFT JOIN v_event_payments vp ON vp.event_id = e.id
       WHERE DATE(e.event_datetime) = CURDATE() + INTERVAL 1 DAY
+        AND e.status <> 'archived'
       ORDER BY e.event_datetime ASC;
     `);
     }
@@ -122,6 +127,7 @@ let DashboardService = class DashboardService {
       LEFT JOIN v_event_totals  vt   ON vt.event_id = e.id
       LEFT JOIN v_event_payments vp  ON vp.event_id = e.id
       WHERE e.event_datetime >= ? AND e.event_datetime < ?
+        AND e.status <> 'archived'
       ORDER BY event_date ASC, e.event_datetime ASC;
     `, from, to);
         // Group into { date: 'YYYY-MM-DD', items: [...] }

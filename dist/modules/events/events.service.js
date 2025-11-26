@@ -107,7 +107,6 @@ let EventsService = class EventsService {
         const events = await this.prisma.events.findMany({
             where: {
                 gcalEventId: { in: ids },
-                NOT: { status: 'archived' }, // hide archived
             },
             select: {
                 gcalEventId: true,
@@ -156,69 +155,6 @@ let EventsService = class EventsService {
         }
         return result;
     }
-    // async checkByGcalIds(
-    //   ids: string[],
-    //   googleEvents: Record<string, { description?: string }> = {}
-    // ) {
-    //   if (!ids.length) return {};
-    //   // 1) Pull ONLY non-archived events from DB
-    //   const events = await this.prisma.events.findMany({
-    //     where: {
-    //       gcalEventId: { in: ids },
-    //       NOT: { status: 'archived' }, // ← hide archived
-    //     },
-    //     select: {
-    //       gcalEventId: true,
-    //       status: true,
-    //       event_datetime: true,
-    //       calender_text: true,
-    //     },
-    //   });
-    //   // Keep the list of active (non-archived) ids only
-    //   const activeIds = events.map(e => e.gcalEventId!).filter(Boolean);
-    //   // If everything requested was archived or missing, short-circuit
-    //   if (!activeIds.length) return {};
-    //   // 2) Pull payments for active ids only (latest per gcal id)
-    //   const payments = await this.prisma.event_payments.findMany({
-    //     where: { event_gcal_id: { in: activeIds } },
-    //     select: { event_gcal_id: true, status: true },
-    //     orderBy: { created_at: 'desc' },
-    //   });
-    //   const latestPayByGcal = new Map<string, string>();
-    //   for (const p of payments) {
-    //     if (p.event_gcal_id && !latestPayByGcal.has(p.event_gcal_id)) {
-    //       latestPayByGcal.set(p.event_gcal_id, p.status ?? 'pending');
-    //     }
-    //   }
-    //   // 3) Build result ONLY for active ids
-    //   const result: Record<string, {
-    //     exists: boolean;
-    //     status?: string;
-    //     paymentStatus: string;
-    //     orderDate?: string;
-    //     /** true if DB calender_text === Google description; null if we didn't get Google data */
-    //     isDescriptionSame: boolean | null;
-    //     /** conventional: true if different, false if same, null if unknown */
-    //     isModified: boolean | null;
-    //   }> = {};
-    //   const norm = (s?: string | null) => (s ?? '').trim();
-    //   for (const id of activeIds) {
-    //     const ev = events.find(e => e.gcalEventId === id);
-    //     const localDesc = ev?.calender_text ?? null;
-    //     const haveG = Object.prototype.hasOwnProperty.call(googleEvents, id);
-    //     const gcalDesc = haveG ? (googleEvents[id]?.description ?? null) : null;
-    //     const same = (ev && haveG) ? norm(localDesc) === norm(gcalDesc) : null;
-    //     result[id] = {
-    //       exists: !!ev, // will be true here
-    //       status: ev?.status ?? undefined,
-    //       paymentStatus: latestPayByGcal.get(id) ?? 'pending',
-    //       orderDate: ev?.event_datetime ? ev.event_datetime.toISOString() : undefined,
-    //       isDescriptionSame: same,
-    //       isModified: same === null ? null : !same,
-    //     };
-    //   }
-    //   return result;
-    // }
     /** Single lookup by gcal */
     async getByGcalId(id) {
         return this.prisma.events.findFirst({
