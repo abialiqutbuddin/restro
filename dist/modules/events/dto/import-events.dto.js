@@ -256,6 +256,20 @@ __decorate([
 ], ImportEventDto.prototype, "discount", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], ImportEventDto.prototype, "salesTaxPct", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], ImportEventDto.prototype, "salesTaxAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     (0, class_transformer_1.Type)(() => Number),
     __metadata("design:type", Number)

@@ -9,16 +9,16 @@ import { EventBillingStatus } from '@prisma/client';
 
 /* ---- enums ---- */
 export enum PricingUnitCode {
-  PER_THAAL  = 'per_thaal',
-  PER_SIZE   = 'per_size',
+  PER_THAAL = 'per_thaal',
+  PER_SIZE = 'per_size',
   PER_PERSON = 'per_person',
-  PER_TRAY   = 'per_tray',
-  PER_BOX   = 'per_box',
-  PER_ITEM  = 'per_item',
+  PER_TRAY = 'per_tray',
+  PER_BOX = 'per_box',
+  PER_ITEM = 'per_item',
 }
 export enum PricingModeCode {
-  PER_UNIT_MANUAL      = 'per_unit_manual',
-  PER_UNIT_FROM_ITEMS  = 'per_unit_from_items',
+  PER_UNIT_MANUAL = 'per_unit_manual',
+  PER_UNIT_FROM_ITEMS = 'per_unit_from_items',
 }
 export enum CurrencyCode { USD = 'USD' }
 export enum EventStatus { INCOMPLETE = 'incomplete', COMPLETE = 'complete', NEW = 'new', PENDING = 'pending' }
@@ -104,7 +104,7 @@ export class ImportEventDto {
 
   _customerGuard!: string;
 
-  @IsString() 
+  @IsString()
   eventDatetime!: string;
 
   @IsOptional() @IsString() calendarText?: string;
@@ -115,6 +115,8 @@ export class ImportEventDto {
   @IsOptional() @IsNumber() @Type(() => Number) @Min(0) deliveryCharges?: number;
   @IsOptional() @IsNumber() @Type(() => Number) @Min(0) serviceCharges?: number;
   @IsOptional() @IsNumber() @Type(() => Number) @Min(0) discount?: number;
+  @IsOptional() @IsNumber() @Type(() => Number) @Min(0) salesTaxPct?: number; // e.g. 10.5
+  @IsOptional() @IsNumber() @Type(() => Number) @Min(0) salesTaxAmount?: number; // calculated
   @IsOptional() @IsInt() @Type(() => Number) headcountEst?: number;
   @IsOptional() @IsEnum(EventStatus) status?: EventStatus;
 

@@ -48,15 +48,26 @@ model customers {
   @@index([phone])
 }
 
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  USER
+}
+
 model users {
   id         BigInt   @id @default(autoincrement())
   email      String   @unique @db.VarChar(150)
   password   String   @db.VarChar(255)
   name       String?  @db.VarChar(150)
-  role       String   @default("user") @db.VarChar(50)
+  role       Role     @default(USER)
   is_active  Boolean  @default(true)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+  
+  // relations
+  magic_links_created order_magic_links[]
+  reviewed_change_requests order_change_requests[]
+  audit_logs               order_audit_logs[]
 }
 
 /// ---------- Lookups (unchanged) ----------
@@ -135,13 +146,23 @@ model events {
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
   discount         Decimal? @db.Decimal(12, 2)
+  sales_tax_pct    Decimal? @db.Decimal(5, 2)  // e.g. 10.50
+  sales_tax_amount Decimal? @db.Decimal(12, 2)
   billing_status   EventBillingStatus @default(unbilled)
+  is_locked        Boolean            @default(false)
+  event_type       String?            @db.VarChar(50) // e.g. "wedding", "corporate"
 
   // NEW relation
   customer        customers? @relation(fields: [customer_id], references: [id], onDelete: SetNull)
   event_caterings event_caterings[]
   payments         event_payments[]       // <— relation
   invoiceEvents    InvoiceEvent[]
+  magic_links      order_magic_links[]
+  change_requests  order_change_requests[]
+  audit_logs       order_audit_logs[]
+
+  client_approval_status ApprovalStatus @default(PENDING)
+  approved_at            DateTime?
 
 
   @@index([customer_id])
@@ -151,7 +172,7 @@ model events {
 // --- event_payments: one row per payment/attempt ---
 model event_payments {
   id             BigInt        @id @default(autoincrement())
-  event_gcal_id  String
+  event_gcal_id  String?
   method         PaymentMethod
   amount         Decimal        @db.Decimal(12, 2)
   currency       String         @db.Char(3)
@@ -163,7 +184,7 @@ model event_payments {
   updated_at     DateTime       @updatedAt
 
   // relation to events via UNIQUE gcalEventId
-  event events @relation(fields: [event_gcal_id], references: [gcalEventId], onDelete: Cascade, onUpdate: Cascade)
+  event events? @relation(fields: [event_gcal_id], references: [gcalEventId], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([event_gcal_id])
 }
@@ -278,4 +299,81 @@ model InvoiceEvent {
 
   @@id([invoiceId, eventId])
   @@index([eventId])
+}
+
+model order_magic_links {
+  id               BigInt    @id @default(autoincrement())
+  order_id         BigInt
+  token_hash       String    @db.VarChar(255)
+  created_at       DateTime  @default(now())
+  expires_at       DateTime
+  revoked_at       DateTime?
+  created_by_user_id BigInt?
+  last_accessed_at DateTime?
+  access_count     Int       @default(0)
+
+  // relations
+  event events @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  user  users? @relation(fields: [created_by_user_id], references: [id], onDelete: SetNull)
+
+  @@index([order_id])
+  @@index([token_hash])
+  @@index([created_by_user_id])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model order_change_requests {
+  id           BigInt              @id @default(autoincrement())
+  order_id     BigInt
+  changes_json Json
+  reason       String              @db.Text
+  status       ChangeRequestStatus @default(PENDING)
+  requested_at DateTime            @default(now())
+  reviewed_by  BigInt?
+  reviewed_at  DateTime?
+  review_notes String?             @db.Text
+
+  event    events @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  reviewer users? @relation(fields: [reviewed_by], references: [id], onDelete: SetNull)
+
+  @@index([order_id])
+  @@index([reviewed_by])
+}
+
+enum AuditActorType {
+  CLIENT
+  STAFF
+  SYSTEM
+}
+
+model order_audit_logs {
+  id          BigInt         @id @default(autoincrement())
+  order_id    BigInt
+  actor_type  AuditActorType
+  actor_id    BigInt?
+  action      String         @db.VarChar(100)
+  timestamp   DateTime       @default(now())
+  metadata    Json?
+
+  event events @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  user  users? @relation(fields: [actor_id], references: [id], onDelete: SetNull)
+
+  @@index([order_id])
+  @@index([actor_id])
+}
+
+model AppConfig {
+  key   String @id @db.VarChar(100)
+  value String @db.Text
 }

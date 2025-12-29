@@ -6,8 +6,9 @@ import { CustomersModule } from '../customers/customers.module';
 import { GcalModule } from '../gcal/gcal.module';
 
 @Module({
-  imports: [CustomersModule,GcalModule],
+  imports: [CustomersModule, GcalModule],
   controllers: [EventsController],
   providers: [EventsService, PrismaService],
+  exports: [EventsService],
 })
-export class EventsModule {}
+export class EventsModule { }

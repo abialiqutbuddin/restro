@@ -24,14 +24,18 @@ let DashboardController = class DashboardController {
         const from = fromStr ? new Date(fromStr) : new Date(now.getFullYear(), now.getMonth(), 1);
         const to = toStr ? new Date(toStr) : new Date(now.getFullYear(), now.getMonth() + 1, 1);
         const top = topStr ? Math.max(1, Number(topStr)) : 5;
-        const [kpis, catRevenue, topItems, today, tomorrow] = await Promise.all([
+        const todayDate = new Date();
+        const tomorrowDate = new Date(todayDate);
+        tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+        const [kpis, catRevenue, topItems, today, tomorrow, chaos] = await Promise.all([
             this.svc.kpis(from, to),
             this.svc.categoryRevenue(from, to),
             this.svc.topItemsPerCategory(from, to, top),
             this.svc.todayList(),
             this.svc.tomorrowList(),
+            this.svc.getChaosReport(todayDate, tomorrowDate),
         ]);
-        return { range: { from, to }, kpis, catRevenue, topItems, today, tomorrow };
+        return { range: { from, to }, kpis, catRevenue, topItems, today, tomorrow, chaos };
     }
     async rangeList(fromStr, toStr) {
         const now = new Date();

@@ -21,5 +21,6 @@ exports.EventsModule = EventsModule = __decorate([
         imports: [customers_module_1.CustomersModule, gcal_module_1.GcalModule],
         controllers: [events_controller_1.EventsController],
         providers: [events_service_1.EventsService, prisma_service_1.PrismaService],
+        exports: [events_service_1.EventsService],
     })
 ], EventsModule);

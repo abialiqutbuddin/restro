@@ -12,21 +12,23 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../database/prisma.service");
+const settings_service_1 = require("../settings/settings.service");
 let DashboardService = class DashboardService {
-    constructor(prisma) {
+    constructor(prisma, settings) {
         this.prisma = prisma;
+        this.settings = settings;
     }
     async kpis(from, to) {
         const [row] = await this.prisma.$queryRawUnsafe(`
       SELECT
         COUNT(*)                                            AS total_events,
         COALESCE(SUM(vt.items_total), 0)                   AS items_total,
-        COALESCE(SUM(vt.grand_total), 0)                   AS grand_total,
+        COALESCE(SUM(vt.grand_total - COALESCE(e.discount, 0)), 0)  AS grand_total,
         COALESCE(SUM(vp.amount_paid), 0)                   AS amount_paid,
-        COALESCE(SUM(vt.grand_total - vp.amount_paid), 0)  AS outstanding,
+        COALESCE(SUM((vt.grand_total - COALESCE(e.discount, 0)) - vp.amount_paid), 0)  AS outstanding,
         ROUND(
           CASE WHEN COUNT(*) = 0 THEN 0
-               ELSE COALESCE(SUM(vt.grand_total), 0) / COUNT(*)
+               ELSE COALESCE(SUM(vt.grand_total - COALESCE(e.discount, 0)), 0) / COUNT(*)
           END, 2)                                          AS avg_order_value,
         COALESCE(SUM(e.headcount_est), 0)                  AS total_headcount
       FROM v_event_totals vt
@@ -84,8 +86,9 @@ let DashboardService = class DashboardService {
         return this.prisma.$queryRawUnsafe(`
       SELECT e.id, e.event_datetime, e.venue, e.status,
              cust.name AS customer_name,
-             vt.grand_total, vp.amount_paid,
-             (vt.grand_total - vp.amount_paid) AS outstanding
+             (vt.grand_total - COALESCE(e.discount, 0)) AS grand_total,
+             vp.amount_paid,
+             ((vt.grand_total - COALESCE(e.discount, 0)) - vp.amount_paid) AS outstanding
       FROM events e
       LEFT JOIN customers cust ON cust.id = e.customer_id
       LEFT JOIN v_event_totals vt ON vt.event_id = e.id
@@ -99,8 +102,9 @@ let DashboardService = class DashboardService {
         return this.prisma.$queryRawUnsafe(`
       SELECT e.id, e.event_datetime, e.venue, e.status,
              cust.name AS customer_name,
-             vt.grand_total, vp.amount_paid,
-             (vt.grand_total - vp.amount_paid) AS outstanding
+             (vt.grand_total - COALESCE(e.discount, 0)) AS grand_total,
+             vp.amount_paid,
+             ((vt.grand_total - COALESCE(e.discount, 0)) - vp.amount_paid) AS outstanding
       FROM events e
       LEFT JOIN customers cust ON cust.id = e.customer_id
       LEFT JOIN v_event_totals vt ON vt.event_id = e.id
@@ -119,9 +123,9 @@ let DashboardService = class DashboardService {
         e.venue,
         e.status,
         cust.name                            AS customer_name,
-        vt.grand_total,
+        (vt.grand_total - COALESCE(e.discount, 0)) AS grand_total,
         vp.amount_paid,
-        (vt.grand_total - vp.amount_paid)    AS outstanding
+        ((vt.grand_total - COALESCE(e.discount, 0)) - vp.amount_paid)    AS outstanding
       FROM events e
       LEFT JOIN customers       cust ON cust.id = e.customer_id
       LEFT JOIN v_event_totals  vt   ON vt.event_id = e.id
@@ -153,9 +157,76 @@ let DashboardService = class DashboardService {
         }
         return Array.from(byDate.entries()).map(([date, items]) => ({ date, items }));
     }
+    async getChaosMetrics(date) {
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+        // 1. Total Events
+        const eventsCount = await this.prisma.events.count({
+            where: {
+                event_datetime: { gte: startOfDay, lt: endOfDay },
+                status: { not: 'archived' },
+            },
+        });
+        // 2. Menu Breakdown (Categories)
+        const menuBreakdown = await this.prisma.$queryRawUnsafe(`
+      SELECT c.name, COUNT(DISTINCT ec.id) as count
+      FROM events e
+      JOIN event_caterings ec ON ec.event_id = e.id
+      JOIN category c ON c.id = ec.category_id
+      WHERE e.event_datetime >= ? AND e.event_datetime < ?
+        AND e.status <> 'archived'
+      GROUP BY c.name
+      ORDER BY count DESC
+    `, startOfDay, endOfDay);
+        // 3. Item Aggregates
+        const itemBreakdown = await this.prisma.$queryRawUnsafe(`
+      SELECT mi.name, SUM(eco.qty * ecmi.qty_per_unit) as total_qty
+      FROM events e
+      JOIN event_caterings ec ON ec.event_id = e.id
+      JOIN event_catering_orders eco ON eco.event_catering_id = ec.id
+      JOIN event_catering_menu_items ecmi ON ecmi.event_catering_order_id = eco.id
+      JOIN menu_items mi ON mi.id = ecmi.item_id
+      WHERE e.event_datetime >= ? AND e.event_datetime < ?
+        AND e.status <> 'archived'
+      GROUP BY mi.name
+      ORDER BY total_qty DESC
+      LIMIT 15
+    `, startOfDay, endOfDay);
+        // Safe Number parsing for BigInt counts from raw query
+        const safeMenus = menuBreakdown.map((r) => ({
+            name: r.name,
+            count: Number(r.count || 0),
+        }));
+        const safeItems = itemBreakdown.map((r) => ({
+            name: r.name,
+            quantity: Number(r.total_qty || 0),
+        }));
+        return {
+            totalEvents: eventsCount,
+            menuBreakdown: safeMenus,
+            itemBreakdown: safeItems,
+        };
+    }
+    async getChaosReport(today, tomorrow) {
+        const [todayMetrics, tomorrowMetrics, thresholds] = await Promise.all([
+            this.getChaosMetrics(today),
+            this.getChaosMetrics(tomorrow),
+            this.settings.getChaosSettings(),
+        ]);
+        return {
+            metrics: {
+                today: todayMetrics,
+                tomorrow: tomorrowMetrics,
+            },
+            thresholds,
+        };
+    }
 };
 exports.DashboardService = DashboardService;
 exports.DashboardService = DashboardService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        settings_service_1.SettingsService])
 ], DashboardService);

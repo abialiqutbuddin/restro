@@ -4,10 +4,14 @@ import { PrismaService } from '../../database/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { ImportEventDto } from './dto/import-events.dto';
+import { ClientUpdateEventDto } from './dto/client-update-event.dto';
 import { GcalService } from '../gcal/gcal.service';
 import { mapRowsToInvoiceEnvelope } from './invoice-mapper'; // <— add this import
 import { toDateKeepWall, toDateStrict } from '../../utils/date_conversion';
+
 import { buildGoogleCentralTimes, parseAsCentralToUTC } from '../../utils/central_tz';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuditActorType } from '@prisma/client';
 
 const asNum = (v: unknown): number | null => {
   if (v == null) return null;
@@ -25,12 +29,23 @@ type BuildInvoiceArgs = {
   includeEvents: boolean;
 };
 
+// Default cutoff hours if not specified
+const DEFAULT_CUTOFF_HOURS = 24;
+
+const EVENT_TYPE_CUTOFFS: Record<string, number> = {
+  'wedding': 72, // 3 days
+  'corporate': 48, // 2 days
+  'standard': 24, // 1 day
+};
+
 @Injectable()
 export class EventsService {
   constructor(
     private prisma: PrismaService,
     private customers: CustomersService,
+
     private readonly gcal: GcalService,   // <-- inject here
+    private readonly auditLogs: AuditLogsService,
   ) { }
 
   /** List events including customer + nested items */
@@ -82,7 +97,7 @@ export class EventsService {
 
     const billingStatus = dto.billingStatus ?? EventBillingStatus.unbilled;
 
-    return this.prisma.events.create({
+    const result = await this.prisma.events.create({
       data: {
         gcalEventId: dto.gcalEventId ?? null,
         event_datetime: new Date(dto.eventDate),
@@ -101,6 +116,17 @@ export class EventsService {
       },
       include: { customer: true },
     });
+
+    // Log ORDER_CREATED action
+    try {
+      await this.auditLogs.log(result.id, AuditActorType.STAFF, 'ORDER_CREATED', {
+        metadata: { gcalEventId: dto.gcalEventId },
+      });
+    } catch (e) {
+      console.warn('Failed to log ORDER_CREATED', e);
+    }
+
+    return result;
   }
 
 
@@ -262,7 +288,7 @@ export class EventsService {
       dto.gcalEventId = createdGcalId;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
 
 
       // ---------- A) Resolve customer relation on the SAME tx client ----------
@@ -383,6 +409,8 @@ export class EventsService {
         service_charges:
           dto.serviceCharges != null ? new Prisma.Decimal(dto.serviceCharges) : null,
         discount: dto.discount != null ? new Prisma.Decimal(dto.discount) : null,
+        sales_tax_pct: dto.salesTaxPct != null ? new Prisma.Decimal(dto.salesTaxPct) : null,
+        sales_tax_amount: dto.salesTaxAmount != null ? new Prisma.Decimal(dto.salesTaxAmount) : null,
         headcount_est: dto.headcountEst ?? null,
         status: desiredStatusAtStart,
         ...(finalCustomerRel ? { customer: finalCustomerRel } : {}), // <-- key bit
@@ -473,7 +501,8 @@ export class EventsService {
       const delivery = eventRow.delivery_charges ?? new Prisma.Decimal(0);
       const service = eventRow.service_charges ?? new Prisma.Decimal(0);
       const discount = eventRow.discount ?? new Prisma.Decimal(0);
-      const orderTotal = itemsSubtotal.add(delivery).add(service).sub(discount);
+      const salesTaxAmount = eventRow.sales_tax_amount ?? new Prisma.Decimal(0);
+      const orderTotal = itemsSubtotal.add(delivery).add(service).sub(discount).add(salesTaxAmount);
 
       return tx.events.update({
         where: { id: eventRow.id },
@@ -490,6 +519,128 @@ export class EventsService {
     }, {
       timeout: 200_000,
       maxWait: 5_000,
+    });
+
+    try {
+      if (result) {
+        await this.auditLogs.log(result.id, AuditActorType.STAFF, 'ORDER_IMPORTED', {
+          metadata: {
+            gcalEventId: dto.gcalEventId,
+            isNewOrder: dto.newOrder,
+            status: dto.status
+          },
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to log ORDER_IMPORTED', e);
+    }
+
+    return result;
+  }
+
+  /** Update event from Client (Magic Link) - updates headcount, notes, and nuke-and-pave caterings */
+  async updateEventTree(id: bigint, dto: ClientUpdateEventDto) {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update scalar fields
+      await tx.events.update({
+        where: { id },
+        data: {
+          ...(dto.headcountEst !== undefined ? { headcount_est: dto.headcountEst } : {}),
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+        }
+      });
+
+      // 2. If caterings provided, replace them
+      if (dto.caterings) {
+        await tx.event_caterings.deleteMany({ where: { event_id: id } });
+
+        let itemsSubtotal = new Prisma.Decimal(0);
+
+        for (const cat of dto.caterings) {
+          const catering = await tx.event_caterings.create({
+            data: {
+              event_id: id,
+              category_id: BigInt(cat.categoryId),
+              title_override: cat.titleOverride ?? null,
+              instructions: cat.instructions ?? null,
+            },
+            select: { id: true },
+          });
+
+          for (const ord of cat.orders) {
+            const qtyDec = new Prisma.Decimal(ord.qty);
+            const unitPriceDec = new Prisma.Decimal(ord.unitPrice);
+            const lineSubtotal = qtyDec.mul(unitPriceDec);
+            itemsSubtotal = itemsSubtotal.add(lineSubtotal);
+
+            const order = await tx.event_catering_orders.create({
+              data: {
+                event_catering_id: catering.id,
+                unit_code: ord.unitCode,
+                pricing_mode: ord.pricingMode,
+                qty: qtyDec,
+                unit_price: unitPriceDec,
+                currency: ord.currency,
+                line_subtotal: lineSubtotal,
+                calc_notes: ord.calcNotes ?? null,
+              },
+              select: { id: true },
+            });
+
+            if (ord.items?.length) {
+              const rows = ord.items.map((it, i) => {
+                const qtyPerUnitDec = it.qtyPerUnit != null ? new Prisma.Decimal(it.qtyPerUnit) : new Prisma.Decimal(1);
+                const componentPriceDec = it.componentPrice != null ? new Prisma.Decimal(it.componentPrice) : null;
+                return {
+                  event_catering_order_id: order.id,
+                  position_number: i + 1,
+                  item_id: BigInt(it.itemId),
+                  size_id: it.sizeId !== undefined ? BigInt(it.sizeId) : null,
+                  qty_per_unit: qtyPerUnitDec,
+                  component_price: componentPriceDec,
+                  component_subtotal_for_one_unit: componentPriceDec ? qtyPerUnitDec.mul(componentPriceDec) : null,
+                  notes: it.notes ?? null,
+                };
+              });
+              await tx.event_catering_menu_items.createMany({ data: rows });
+            }
+          }
+        }
+
+        // 3. Recalculate totals
+        // Fetch current delivery/service/discount to preserve them or update if needed?
+        // Client doesn't edit delivery/service/discount/tax ideally.
+        // So fetch them from DB.
+        const ev = await tx.events.findUnique({ where: { id } });
+        if (!ev) throw new NotFoundException('Event not found during update');
+
+        const delivery = ev.delivery_charges ?? new Prisma.Decimal(0);
+        const service = ev.service_charges ?? new Prisma.Decimal(0);
+        const discount = ev.discount ?? new Prisma.Decimal(0);
+        const salesTaxAmount = ev.sales_tax_amount ?? new Prisma.Decimal(0); // Note: Tax might need recalc if it depends on subtotal?
+        // If tax is amount-based, it might be outdated. If pct-based, we should recalc it.
+
+        let finalTaxPromise = new Prisma.Decimal(salesTaxAmount);
+        if (ev.sales_tax_pct && !ev.sales_tax_pct.equals(0)) {
+          // Simple tax logic: (subtotal + delivery + service - discount) * pct / 100 ?
+          // Or just subtotal? Depeding on rules.
+          // Assuming tax is on (Subtotal + Service + Delivery - Discount)
+          const taxable = itemsSubtotal.add(delivery).add(service).sub(discount);
+          if (taxable.gt(0)) {
+            finalTaxPromise = taxable.mul(ev.sales_tax_pct).div(100);
+          }
+        }
+
+        const orderTotal = itemsSubtotal.add(delivery).add(service).sub(discount).add(finalTaxPromise);
+
+        await tx.events.update({
+          where: { id },
+          data: {
+            order_total: orderTotal,
+            sales_tax_amount: finalTaxPromise // Update tax amount too
+          }
+        });
+      }
     });
   }
 
@@ -607,7 +758,9 @@ export class EventsService {
     const delivery = asNum(ev.delivery_charges) ?? 0;
     const service = asNum(ev.service_charges) ?? 0;
     const discount = asNum(ev.discount) ?? 0;
-    const grandTotal = itemsSubtotal + delivery + service - discount;
+    const salesTaxPct = asNum(ev.sales_tax_pct) ?? 0;
+    const salesTaxAmount = asNum(ev.sales_tax_amount) ?? 0;
+    const grandTotal = itemsSubtotal + delivery + service - discount + salesTaxAmount;
 
     return {
       id: Number(ev.id),
@@ -625,7 +778,117 @@ export class EventsService {
       isDelivery: !!ev.is_delivery,
       status: ev.status,
       billingStatus: ev.billing_status,
-      totals: { itemsSubtotal, delivery, service, discount, grandTotal },
+      salesTaxPct,
+      totals: { itemsSubtotal, delivery, service, discount, salesTaxAmount, grandTotal },
+      caterings,
+    };
+  }
+
+  /** Summary view by numeric id (for magic link use) */
+  async getEventViewById(id: bigint) {
+    const ev = await this.prisma.events.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        event_caterings: {
+          include: {
+            category: true,
+            event_catering_orders: {
+              include: {
+                unit: true,
+                event_catering_menu_items: { include: { item: true, size: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!ev) throw new NotFoundException(`Event ${id} not found`);
+
+    let itemsSubtotal = 0;
+
+    const caterings = ev.event_caterings.map((c) => {
+      const orders = c.event_catering_orders.map((o) => {
+        const qty = asNum(o.qty) ?? 0;
+        const unitPrice = asNum(o.unit_price) ?? 0;
+        const lineSubtotal = qty * unitPrice;
+        itemsSubtotal += lineSubtotal;
+
+        const items = o.event_catering_menu_items.map((mi) => {
+          const qtyPerUnit = asNum(mi.qty_per_unit) ?? 1;
+          const componentPrice = asNum(mi.component_price);
+          const componentSubtotalForOne =
+            componentPrice == null ? null : qtyPerUnit * componentPrice;
+
+          return {
+            id: Number(mi.id),
+            position: mi.position_number,
+            item: mi.item && { id: Number(mi.item.id), name: mi.item.name },
+            size: mi.size ? { id: Number(mi.size.id), name: mi.size.name } : null,
+            qtyPerUnit,
+            componentPrice,
+            componentSubtotalForOne,
+            notes: mi.notes,
+          };
+        });
+
+        return {
+          id: Number(o.id),
+          unit: { code: o.unit.code, label: o.unit.label, qtyLabel: o.unit.qty_label },
+          pricingMode: o.pricing_mode,
+          qty,
+          unitPrice,
+          currency: o.currency,
+          lineSubtotal,
+          calcNotes: o.calc_notes,
+          items,
+        };
+      });
+
+      const subtotal = orders.reduce((s, x) => s + x.lineSubtotal, 0);
+
+      return {
+        id: Number(c.id),
+        category: c.category && { id: Number(c.category.id), name: c.category.name, slug: c.category.slug },
+        titleOverride: c.title_override,
+        instructions: c.instructions,
+        subtotal,
+        orders,
+      };
+    });
+
+    const delivery = asNum(ev.delivery_charges) ?? 0;
+    const service = asNum(ev.service_charges) ?? 0;
+    const discount = asNum(ev.discount) ?? 0;
+    const salesTaxPct = asNum(ev.sales_tax_pct) ?? 0;
+    const salesTaxAmount = asNum(ev.sales_tax_amount) ?? 0;
+    const grandTotal = itemsSubtotal + delivery + service - discount + salesTaxAmount;
+
+    // Calculate lock status and cutoff time
+    const cutoffTime = this.getCutoffTime(ev.event_datetime, (ev as any).event_type);
+    const isLocked = this.isEventLocked(ev as any);
+
+    return {
+      id: Number(ev.id),
+      gcalEventId: ev.gcalEventId,
+      customer: ev.customer
+        ? { id: Number(ev.customer.id), name: ev.customer.name, email: ev.customer.email, phone: ev.customer.phone }
+        : null,
+      customerName: ev.customer?.name ?? null,
+      customerPhone: ev.customer?.phone ?? null,
+      customerEmail: ev.customer?.email ?? null,
+      eventDate: ev.event_datetime,
+      venue: ev.venue,
+      notes: ev.notes,
+      calendarText: ev.calender_text,
+      headcount_est: ev.headcount_est,
+      isDelivery: !!ev.is_delivery,
+      status: ev.status,
+      billingStatus: ev.billing_status,
+      salesTaxPct,
+      is_locked: isLocked,
+      cutoff_time: cutoffTime.toISOString(),
+      totals: { itemsSubtotal, delivery, service, discount, salesTaxAmount, grandTotal },
       caterings,
     };
   }
@@ -638,6 +901,24 @@ export class EventsService {
     if (!ev) throw new NotFoundException(`Event with gcalEventId "${gcalId}" not found`);
     await this.prisma.events.delete({ where: { id: ev.id } });
     return { success: true, gcalEventId: gcalId, id: ev.id };
+  }
+
+  /**
+   * Calculates the cutoff time for editing an event.
+   * Edit allowed until: event_date - cutoff_hours
+   */
+  getCutoffTime(eventDate: Date, eventType: string | null): Date {
+    const hours = EVENT_TYPE_CUTOFFS[eventType?.toLowerCase() ?? ''] ?? DEFAULT_CUTOFF_HOURS;
+    return new Date(eventDate.getTime() - hours * 60 * 60 * 1000);
+  }
+
+  /**
+   * Checks if an event is locked for editing based on 'is_locked' flag and cutoff time.
+   */
+  isEventLocked(event: { is_locked: boolean, event_datetime: Date, event_type: string | null }): boolean {
+    if (event.is_locked) return true;
+    const cutoff = this.getCutoffTime(event.event_datetime, event.event_type);
+    return new Date() > cutoff;
   }
 
   private asNum(v: unknown): number {
