@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,109 +7,76 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum PaymentMethod {
-  cash
-  check
-  credit
-  others
-}
-
-// Optional: if you want explicit statuses (authorized, captured, refunded)
-enum PaymentStatus {
-  pending
-  succeeded
-  failed
-  refunded
-}
-
-enum EventBillingStatus {
-  unbilled
-  invoiced
-  paid
-  written_off
-}
-
 model customers {
   id            BigInt   @id @default(autoincrement())
   name          String   @db.VarChar(150)
-  email String? @db.VarChar(255) // <- no @unique
-  phone String? @db.VarChar(30)  // <- no @unique
+  email         String?  @db.VarChar(255)
+  phone         String?  @db.VarChar(30)
   default_venue String?  @db.VarChar(200)
   notes         String?  @db.Text
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
+  events        events[]
 
-  // relations
-  events events[]
   @@index([name])
   @@index([email])
   @@index([phone])
 }
 
-enum Role {
-  SUPER_ADMIN
-  ADMIN
-  USER
-}
-
 model users {
-  id         BigInt   @id @default(autoincrement())
-  email      String   @unique @db.VarChar(150)
-  password   String   @db.VarChar(255)
-  name       String?  @db.VarChar(150)
-  role       Role     @default(USER)
-  is_active  Boolean  @default(true)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-  
-  // relations
-  magic_links_created order_magic_links[]
-  reviewed_change_requests order_change_requests[]
+  id                       BigInt                  @id @default(autoincrement())
+  email                    String                  @unique @db.VarChar(150)
+  password                 String                  @db.VarChar(255)
+  name                     String?                 @db.VarChar(150)
+  role                     Role                    @default(USER)
+  is_active                Boolean                 @default(true)
+  created_at               DateTime                @default(now())
+  updated_at               DateTime                @updatedAt
   audit_logs               order_audit_logs[]
+  reviewed_change_requests order_change_requests[]
+  magic_links_created      order_magic_links[]
 }
 
 /// ---------- Lookups (unchanged) ----------
 model category {
-  id         BigInt   @id @default(autoincrement())
-  name       String   @db.VarChar(100)
-  slug       String   @unique @db.VarChar(100)
-  active     Boolean  @default(true)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-
+  id              BigInt            @id @default(autoincrement())
+  name            String            @db.VarChar(100)
+  slug            String            @unique @db.VarChar(100)
+  active          Boolean           @default(true)
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @updatedAt
   category_units  category_unit[]
   event_caterings event_caterings[]
 }
 
 model menu_items {
-  id          BigInt   @id @default(autoincrement())
-  name        String   @unique @db.VarChar(150)
-  description String?  @db.Text
-  active      Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
-
+  id                        BigInt                      @id @default(autoincrement())
+  name                      String                      @unique @db.VarChar(150)
+  description               String?                     @db.Text
+  active                    Boolean                     @default(true)
+  created_at                DateTime                    @default(now())
+  updated_at                DateTime                    @updatedAt
   event_catering_menu_items event_catering_menu_items[]
+  kitchen_prep_status       kitchen_prep_status[]
 }
 
 model sizes {
-  id          BigInt   @id @default(autoincrement())
-  name        String   @unique @db.VarChar(80)
-  description String?  @db.Text
-  active      Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
-
+  id                        BigInt                      @id @default(autoincrement())
+  name                      String                      @unique @db.VarChar(80)
+  description               String?                     @db.Text
+  active                    Boolean                     @default(true)
+  created_at                DateTime                    @default(now())
+  updated_at                DateTime                    @updatedAt
   event_catering_menu_items event_catering_menu_items[]
+  kitchen_prep_status       kitchen_prep_status[]
 }
 
 model pricing_unit {
-  code       String   @id @db.VarChar(50)
-  label      String   @db.VarChar(100)
-  qty_label  String   @db.VarChar(50)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-
+  code                  String                  @id @db.VarChar(50)
+  label                 String                  @db.VarChar(100)
+  qty_label             String                  @db.VarChar(50)
+  created_at            DateTime                @default(now())
+  updated_at            DateTime                @updatedAt
   category_units        category_unit[]
   event_catering_orders event_catering_orders[]
 }
@@ -126,199 +91,240 @@ model category_unit {
   pricing_unit pricing_unit @relation(fields: [unit_code], references: [code], onDelete: Cascade)
 
   @@id([category_id, unit_code])
+  @@index([unit_code], map: "category_unit_unit_code_fkey")
 }
 
 /// ---------- Core ----------
 model events {
-  id               BigInt   @id @default(autoincrement())
-  gcalEventId      String?  @unique(map: "uniq_events_gcal_event_id")
-  customer_id      BigInt?
-  event_datetime   DateTime
-  venue            String?  @db.VarChar(200)
-  delivery_charges Decimal? @db.Decimal(12, 2)
-  is_delivery      Boolean? @default(false)
-  service_charges  Decimal? @db.Decimal(12, 2)
-  headcount_est    Int?     @db.Int
-  notes            String?  @db.Text
-  calender_text    String?  @db.Text
-  order_total      Decimal? @db.Decimal(12, 2)
-  status           String?  @db.VarChar(50)
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
-  discount         Decimal? @db.Decimal(12, 2)
-  sales_tax_pct    Decimal? @db.Decimal(5, 2)  // e.g. 10.50
-  sales_tax_amount Decimal? @db.Decimal(12, 2)
-  billing_status   EventBillingStatus @default(unbilled)
-  is_locked        Boolean            @default(false)
-  event_type       String?            @db.VarChar(50) // e.g. "wedding", "corporate"
-
-  // NEW relation
-  customer        customers? @relation(fields: [customer_id], references: [id], onDelete: SetNull)
-  event_caterings event_caterings[]
-  payments         event_payments[]       // <— relation
-  invoiceEvents    InvoiceEvent[]
-  magic_links      order_magic_links[]
-  change_requests  order_change_requests[]
-  audit_logs       order_audit_logs[]
-
-  client_approval_status ApprovalStatus @default(PENDING)
+  id                     BigInt                  @id @default(autoincrement())
+  event_datetime         DateTime
+  venue                  String?                 @db.VarChar(200)
+  delivery_charges       Decimal?                @db.Decimal(12, 2)
+  is_delivery            Boolean?                @default(false)
+  service_charges        Decimal?                @db.Decimal(12, 2)
+  headcount_est          Int?
+  notes                  String?                 @db.Text
+  calender_text          String?                 @db.Text
+  order_total            Decimal?                @db.Decimal(12, 2)
+  status                 String?                 @db.VarChar(50)
+  created_at             DateTime                @default(now())
+  updated_at             DateTime                @updatedAt
+  customer_id            BigInt?
+  discount               Decimal?                @db.Decimal(12, 2)
+  billing_status         EventBillingStatus      @default(unbilled)
+  sales_tax_amount       Decimal?                @db.Decimal(12, 2)
+  sales_tax_pct          Decimal?                @db.Decimal(5, 2)
+  gcalEventId            String?                 @unique(map: "uniq_events_gcal_event_id")
+  event_type             String?                 @db.VarChar(50)
+  is_locked              Boolean                 @default(false)
   approved_at            DateTime?
-
+  client_approval_status ApprovalStatus          @default(PENDING)
+  event_caterings        event_caterings[]
+  payments               event_payments[]
+  customer               customers?              @relation(fields: [customer_id], references: [id])
+  invoiceevent           invoiceevent[]
+  audit_logs             order_audit_logs[]
+  change_requests        order_change_requests[]
+  magic_links            order_magic_links[]
+  kitchen_prep_status    kitchen_prep_status[]
 
   @@index([customer_id])
   @@index([billing_status, event_datetime])
 }
 
-// --- event_payments: one row per payment/attempt ---
 model event_payments {
-  id             BigInt        @id @default(autoincrement())
-  event_gcal_id  String?
-  method         PaymentMethod
-  amount         Decimal        @db.Decimal(12, 2)
-  currency       String         @db.Char(3)
-  paid_at        DateTime       @default(now())
-  status         PaymentStatus  @default(succeeded)
-  square_id      String?
-  notes          String?
-  created_at     DateTime       @default(now())
-  updated_at     DateTime       @updatedAt
-
-  // relation to events via UNIQUE gcalEventId
-  event events? @relation(fields: [event_gcal_id], references: [gcalEventId], onDelete: Cascade, onUpdate: Cascade)
+  id            BigInt        @id @default(autoincrement())
+  method        PaymentMethod
+  amount        Decimal       @db.Decimal(12, 2)
+  currency      String        @db.Char(3)
+  paid_at       DateTime      @default(now())
+  status        PaymentStatus @default(succeeded)
+  notes         String?
+  square_id     String?
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+  event_gcal_id String?
+  event         events?       @relation(fields: [event_gcal_id], references: [gcalEventId], onDelete: Cascade)
 
   @@index([event_gcal_id])
 }
 
 model event_caterings {
-  id             BigInt   @id @default(autoincrement())
-  event_id       BigInt
-  category_id    BigInt
-  title_override String?  @db.VarChar(150)
-  instructions   String?  @db.Text
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
-
-  event    events   @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  category category @relation(fields: [category_id], references: [id], onDelete: Restrict)
-
+  id                    BigInt                  @id @default(autoincrement())
+  event_id              BigInt
+  category_id           BigInt
+  title_override        String?                 @db.VarChar(150)
+  instructions          String?                 @db.Text
+  created_at            DateTime                @default(now())
+  updated_at            DateTime                @updatedAt
   event_catering_orders event_catering_orders[]
+  category              category                @relation(fields: [category_id], references: [id])
+  event                 events                  @relation(fields: [event_id], references: [id], onDelete: Cascade)
 
   @@index([event_id])
   @@index([category_id])
 }
 
 model event_catering_orders {
-  id                BigInt   @id @default(autoincrement())
-  event_catering_id BigInt
-  unit_code         String   @db.VarChar(50)
-  pricing_mode      String   @db.VarChar(50)
-  qty               Decimal  @db.Decimal(12, 2)
-  unit_price        Decimal  @db.Decimal(12, 2)
-  currency          String   @db.Char(3)
-  line_subtotal     Decimal  @db.Decimal(12, 2)
-  calc_notes        String?  @db.Text
-  created_at        DateTime @default(now())
-  updated_at        DateTime @updatedAt
-
-  event_catering event_caterings @relation(fields: [event_catering_id], references: [id], onDelete: Cascade)
-  unit           pricing_unit    @relation(fields: [unit_code], references: [code], onDelete: Restrict)
-
+  id                        BigInt                      @id @default(autoincrement())
+  event_catering_id         BigInt
+  unit_code                 String                      @db.VarChar(50)
+  pricing_mode              String                      @db.VarChar(50)
+  qty                       Decimal                     @db.Decimal(12, 2)
+  unit_price                Decimal                     @db.Decimal(12, 2)
+  currency                  String                      @db.Char(3)
+  line_subtotal             Decimal                     @db.Decimal(12, 2)
+  calc_notes                String?                     @db.Text
+  created_at                DateTime                    @default(now())
+  updated_at                DateTime                    @updatedAt
   event_catering_menu_items event_catering_menu_items[]
+  event_catering            event_caterings             @relation(fields: [event_catering_id], references: [id], onDelete: Cascade)
+  unit                      pricing_unit                @relation(fields: [unit_code], references: [code])
 
   @@index([event_catering_id])
   @@index([unit_code])
 }
 
 model event_catering_menu_items {
-  id                              BigInt   @id @default(autoincrement())
+  id                              BigInt                @id @default(autoincrement())
   event_catering_order_id         BigInt
   position_number                 Int
   size_id                         BigInt?
   item_id                         BigInt
-  qty_per_unit                    Decimal  @db.Decimal(12, 2)
-  component_price                 Decimal? @db.Decimal(12, 2)
-  component_subtotal_for_one_unit Decimal? @db.Decimal(12, 2)
-  notes                           String?  @db.Text
-  created_at                      DateTime @default(now())
-  updated_at                      DateTime @updatedAt
-
-  order event_catering_orders @relation(fields: [event_catering_order_id], references: [id], onDelete: Cascade)
-  size  sizes?                @relation(fields: [size_id], references: [id], onDelete: SetNull)
-  item  menu_items            @relation(fields: [item_id], references: [id], onDelete: Restrict)
+  qty_per_unit                    Decimal               @db.Decimal(12, 2)
+  component_price                 Decimal?              @db.Decimal(12, 2)
+  component_subtotal_for_one_unit Decimal?              @db.Decimal(12, 2)
+  notes                           String?               @db.Text
+  created_at                      DateTime              @default(now())
+  updated_at                      DateTime              @updatedAt
+  order                           event_catering_orders @relation(fields: [event_catering_order_id], references: [id], onDelete: Cascade)
+  item                            menu_items            @relation(fields: [item_id], references: [id])
+  size                            sizes?                @relation(fields: [size_id], references: [id])
 
   @@index([event_catering_order_id])
   @@index([item_id])
   @@index([size_id])
 }
 
-model Invoice {
-  id            Int      @id @default(autoincrement())
-  invoiceNumber String   @unique
-  date          DateTime
-  status        String   @default("ISSUED")
-
-  customerName  String
-  customerEmail String?
-  customerPhone String?
-
-  company       Json      // snapshot of your company info shown in the PDF
-  currencyCode  String
-  taxRate       Float
-  discount      Float     @default(0)
-  shipping      Float     @default(0)
-  isTaxExempt   Boolean   @default(false)
-  paymentInstr  String?
-
-  // Totals (cached for reports)
-  subtotal      Float
-  tax           Float
-  total         Float
-
-  // Store the structure that generated the invoice
-  envelope      Json      // your InvoiceEnvelope JSON
-  eventLines    Json      // edited rows { [eventId]: [{desc, qty, unitPrice}] }
-  items         Json      // flattened line items with totals
-
-  // Optional: store the PDF itself
-  pdf           Bytes?
-  pdfSha256     String?
-
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  eventLinks    InvoiceEvent[]
-}
-
-model InvoiceEvent {
-  invoiceId Int
-  eventId   BigInt
-  lineTotal Decimal @db.Decimal(12, 2)
-
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  event   events  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@id([invoiceId, eventId])
-  @@index([eventId])
-}
-
 model order_magic_links {
-  id               BigInt    @id @default(autoincrement())
-  order_id         BigInt
-  token_hash       String    @db.VarChar(255)
-  created_at       DateTime  @default(now())
-  expires_at       DateTime
-  revoked_at       DateTime?
+  id                 BigInt    @id @default(autoincrement())
+  order_id           BigInt
+  token_hash         String    @db.VarChar(255)
+  created_at         DateTime  @default(now())
+  expires_at         DateTime
+  revoked_at         DateTime?
   created_by_user_id BigInt?
-  last_accessed_at DateTime?
-  access_count     Int       @default(0)
-
-  // relations
-  event events @relation(fields: [order_id], references: [id], onDelete: Cascade)
-  user  users? @relation(fields: [created_by_user_id], references: [id], onDelete: SetNull)
+  last_accessed_at   DateTime?
+  access_count       Int       @default(0)
+  user               users?    @relation(fields: [created_by_user_id], references: [id])
+  event              events    @relation(fields: [order_id], references: [id], onDelete: Cascade)
 
   @@index([order_id])
   @@index([token_hash])
   @@index([created_by_user_id])
+}
+
+model order_change_requests {
+  id           BigInt              @id @default(autoincrement())
+  order_id     BigInt
+  changes_json Json
+  reason       String              @db.Text
+  status       ChangeRequestStatus @default(PENDING)
+  requested_at DateTime            @default(now())
+  reviewed_by  BigInt?
+  reviewed_at  DateTime?
+  review_notes String?             @db.Text
+  event        events              @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  reviewer     users?              @relation(fields: [reviewed_by], references: [id])
+
+  @@index([order_id])
+  @@index([reviewed_by])
+}
+
+model order_audit_logs {
+  id         BigInt         @id @default(autoincrement())
+  order_id   BigInt
+  actor_type AuditActorType
+  actor_id   BigInt?
+  action     String         @db.VarChar(100)
+  timestamp  DateTime       @default(now())
+  metadata   Json?
+  user       users?         @relation(fields: [actor_id], references: [id])
+  event      events         @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@index([order_id])
+  @@index([actor_id])
+}
+
+model appconfig {
+  key   String @id @db.VarChar(100)
+  value String @db.Text
+}
+
+model invoice {
+  id            Int            @id @default(autoincrement())
+  invoiceNumber String         @unique(map: "Invoice_invoiceNumber_key")
+  date          DateTime
+  status        String         @default("ISSUED")
+  customerName  String
+  customerEmail String?
+  customerPhone String?
+  company       Json
+  currencyCode  String
+  taxRate       Float
+  discount      Float          @default(0)
+  shipping      Float          @default(0)
+  isTaxExempt   Boolean        @default(false)
+  paymentInstr  String?
+  subtotal      Float
+  tax           Float
+  total         Float
+  envelope      Json
+  eventLines    Json
+  items         Json
+  pdf           Bytes?
+  pdfSha256     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime
+  invoiceevent  invoiceevent[]
+}
+
+model invoiceevent {
+  invoiceId Int
+  eventId   BigInt
+  lineTotal Decimal @db.Decimal(12, 2)
+  events    events  @relation(fields: [eventId], references: [id], onDelete: Cascade, map: "InvoiceEvent_eventId_fkey")
+  invoice   invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, map: "InvoiceEvent_invoiceId_fkey")
+
+  @@id([invoiceId, eventId])
+  @@index([eventId], map: "InvoiceEvent_eventId_idx")
+}
+
+enum PaymentMethod {
+  cash
+  check
+  credit
+  others
+}
+
+enum PaymentStatus {
+  pending
+  succeeded
+  failed
+  refunded
+}
+
+enum EventBillingStatus {
+  unbilled
+  invoiced
+  paid
+  written_off
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  USER
 }
 
 enum ApprovalStatus {
@@ -333,47 +339,34 @@ enum ChangeRequestStatus {
   REJECTED
 }
 
-model order_change_requests {
-  id           BigInt              @id @default(autoincrement())
-  order_id     BigInt
-  changes_json Json
-  reason       String              @db.Text
-  status       ChangeRequestStatus @default(PENDING)
-  requested_at DateTime            @default(now())
-  reviewed_by  BigInt?
-  reviewed_at  DateTime?
-  review_notes String?             @db.Text
-
-  event    events @relation(fields: [order_id], references: [id], onDelete: Cascade)
-  reviewer users? @relation(fields: [reviewed_by], references: [id], onDelete: SetNull)
-
-  @@index([order_id])
-  @@index([reviewed_by])
-}
-
 enum AuditActorType {
   CLIENT
   STAFF
   SYSTEM
 }
 
-model order_audit_logs {
-  id          BigInt         @id @default(autoincrement())
-  order_id    BigInt
-  actor_type  AuditActorType
-  actor_id    BigInt?
-  action      String         @db.VarChar(100)
-  timestamp   DateTime       @default(now())
-  metadata    Json?
-
-  event events @relation(fields: [order_id], references: [id], onDelete: Cascade)
-  user  users? @relation(fields: [actor_id], references: [id], onDelete: SetNull)
-
-  @@index([order_id])
-  @@index([actor_id])
+enum KitchenPrepStatus {
+  not_started
+  in_progress
+  completed
 }
 
-model AppConfig {
-  key   String @id @db.VarChar(100)
-  value String @db.Text
+model kitchen_prep_status {
+  id            BigInt            @id @default(autoincrement())
+  event_id      BigInt
+  menu_item_id  BigInt
+  size_id       BigInt?
+  status        KitchenPrepStatus @default(not_started)
+  notes         String?           @db.Text
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
+
+  event     events     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  menu_item menu_items @relation(fields: [menu_item_id], references: [id], onDelete: Cascade)
+  size      sizes?     @relation(fields: [size_id], references: [id], onDelete: SetNull)
+
+  @@unique([event_id, menu_item_id, size_id], name: "unique_event_item_size")
+  @@index([event_id])
+  @@index([menu_item_id])
+  @@index([status])
 }

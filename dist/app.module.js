@@ -26,6 +26,7 @@ const magic_links_module_1 = require("./modules/magic-links/magic-links.module")
 const auth_module_1 = require("./modules/auth/auth.module");
 const audit_logs_module_1 = require("./modules/audit-logs/audit-logs.module");
 const settings_module_1 = require("./modules/settings/settings.module");
+const kitchen_reports_module_1 = require("./modules/kitchen-reports/kitchen-reports.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -49,6 +50,7 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             audit_logs_module_1.AuditLogsModule,
             settings_module_1.SettingsModule,
+            kitchen_reports_module_1.KitchenReportsModule,
         ],
         controllers: [seed_controller_1.SeedController],
     })

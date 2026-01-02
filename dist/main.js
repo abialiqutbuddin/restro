@@ -54,11 +54,11 @@ async function bootstrap() {
     app.enableCors({
         origin: corsOrigins.length > 0
             ? corsOrigins
-            : [/^http:\/\/(localhost|127\.0\.0\.1):\d+$/], // dev default
+            : true, // Allow all origins in dev (for Flutter mobile apps)
         methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
-        credentials: true, // set to false if you don't use cookies/credentials
-        maxAge: 600, // cache preflight 10 min
+        credentials: true,
+        maxAge: 600,
     });
     // Validation
     app.useGlobalPipes(new common_1.ValidationPipe({ whitelist: true, transform: true }));

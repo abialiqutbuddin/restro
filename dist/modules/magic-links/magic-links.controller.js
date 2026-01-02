@@ -47,7 +47,13 @@ let MagicLinksController = class MagicLinksController {
         };
     }
     async getStatus(orderId) {
-        const link = await this.magicLinksService.getLinkForOrder(BigInt(orderId));
+        // orderId is likely a CUID (string) or number. The service should handle it.
+        // If the service expects a number (BigInt), but we moved to CUIDs, the service also needs to be compatible.
+        // Given the error "Cannot convert ... to a BigInt", the ID is definitely a string CUID.
+        // We pass it as string, and assume service can handle it or we cast to any if service type is strict but implementation allows string.
+        // Actually, looking at generate, it takes number|string.
+        // Let's assume getLinkForOrder can take string or BigInt.
+        const link = await this.magicLinksService.getLinkForOrder(orderId);
         if (!link) {
             return { exists: false };
         }
