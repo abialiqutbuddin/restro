@@ -43,8 +43,9 @@ export class SendEmailDto {
   @Transform(({ value }) =>
     typeof value === 'string' ? value.replace(/^data:application\/pdf;base64,/, '') : value
   )
+  @IsOptional()
   @IsBase64()
-  pdfBase64!: string;
+  pdfBase64?: string;
 
   @IsOptional()
   @IsString()

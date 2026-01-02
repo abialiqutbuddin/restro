@@ -2,5 +2,4 @@ node_modules
 .env
 /src/generated/prisma
 app.zip
-app.zip
-app.zip
+dist

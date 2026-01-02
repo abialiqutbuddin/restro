@@ -1,12 +1,12 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { EmailService } from './email.service';
+import { EmailQueueService } from '../email-queue/email-queue.service';
 import { SendEmailDto } from './dto/send-email.dto';
 import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
 
 @Controller('email')
 export class EmailController {
-  constructor(private readonly email: EmailService) {}
+  constructor(private readonly emailQueue: EmailQueueService) { }
 
   @Post('send')
   async send(@Body() body: any) {
@@ -16,7 +16,7 @@ export class EmailController {
     const to = Array.isArray(dto.to) ? dto.to : dto.to ? [dto.to] : [];
     const cc = Array.isArray(dto.cc) ? dto.cc : dto.cc ? [dto.cc] : undefined;
 
-    const result = await this.email.sendPdfEmail({
+    await this.emailQueue.addToQueue({
       subject: dto.subject,
       to,
       cc,
@@ -26,6 +26,6 @@ export class EmailController {
       pdfFilename: dto.pdfFilename,
     });
 
-    return { ok: true, ...result };
+    return { ok: true, queued: true };
   }
 }

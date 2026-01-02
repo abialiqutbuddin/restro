@@ -39,17 +39,23 @@ export class EmailService {
     cc?: string[] | string;
     text?: string;
     html?: string;
-    pdfBase64: string;
+    pdfBase64?: string;
     pdfFilename?: string;
   }) {
     const from = `"${this.fromName}" <${this.gmailUser}>`;
 
-    // Convert base64 → Buffer
-    let pdfBuffer: Buffer;
-    try {
-      pdfBuffer = Buffer.from(params.pdfBase64, 'base64');
-    } catch {
-      throw new InternalServerErrorException('Invalid pdfBase64 payload.');
+    const attachments: any[] = [];
+    if (params.pdfBase64) {
+      try {
+        const pdfBuffer = Buffer.from(params.pdfBase64, 'base64');
+        attachments.push({
+          filename: params.pdfFilename || 'attachment.pdf',
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        });
+      } catch {
+        this.log.warn('Invalid pdfBase64 payload, sending email without attachment.');
+      }
     }
 
     try {
@@ -60,13 +66,7 @@ export class EmailService {
         subject: params.subject,
         text: params.text,
         html: params.html,
-        attachments: [
-          {
-            filename: params.pdfFilename || 'attachment.pdf',
-            content: pdfBuffer,
-            contentType: 'application/pdf',
-          },
-        ],
+        attachments,
         envelope: {
           from: this.gmailUser,
           to: Array.isArray(params.to) ? params.to : [params.to],

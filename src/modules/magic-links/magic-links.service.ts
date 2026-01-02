@@ -143,14 +143,32 @@ export class MagicLinksService {
     /**
      * Get the most recent magic link for an order (active or not).
      */
-    async getLinkForOrder(orderId: bigint) {
+    async getLinkForOrder(orderId: bigint | string) {
+        let dbOrderId: bigint;
+
+        // If string and not numeric, assume it's a GCal Event ID
+        if (typeof orderId === 'string' && !/^-?\d+$/.test(orderId)) {
+            const event = await this.db.events.findUnique({
+                where: { gcalEventId: orderId },
+            });
+            if (!event) return null;
+            dbOrderId = event.id;
+        } else {
+            dbOrderId = BigInt(orderId);
+        }
+
         return this.db.order_magic_links.findFirst({
-            where: { order_id: orderId },
+            where: { order_id: dbOrderId },
             orderBy: { created_at: 'desc' },
         });
     }
 
     async validateLink(token: string) {
+        const result = await this.validateLinkDetailed(token);
+        return result.status === 'VALID' ? result.link : null;
+    }
+
+    async validateLinkDetailed(token: string) {
         const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
         const link = await this.db.order_magic_links.findFirst({
@@ -159,10 +177,10 @@ export class MagicLinksService {
             },
         });
 
-        if (!link) return null;
+        if (!link) return { status: 'NOT_FOUND', link: null };
 
-        if (link.revoked_at) return null;
-        if (new Date() > link.expires_at) return null; // Expired
+        if (link.revoked_at) return { status: 'REVOKED', link };
+        if (new Date() > link.expires_at) return { status: 'EXPIRED', link };
 
         // Increment access count
         await this.db.order_magic_links.update({
@@ -174,15 +192,11 @@ export class MagicLinksService {
         });
 
         // Log access (CLIENT)
-        // We don't have a user ID for the client, so actorId is null.
-        // To avoid spamming logs on every validation/page load, we could conditionally log?
-        // But the requirement says "Link created, accessed...".
-        // Let's log it.
         await this.auditLogs.log(link.order_id, AuditActorType.CLIENT, 'LINK_ACCESSED', {
             metadata: { tokenHash: tokenHash.substring(0, 8) + '...' },
         });
 
-        return link;
+        return { status: 'VALID', link };
     }
 
     async updateOrder(token: string, dto: ClientUpdateEventDto) {

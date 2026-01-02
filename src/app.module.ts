@@ -18,6 +18,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { SettingsModule } from './modules/settings/settings.module';
 
+import { EmailQueueModule } from './modules/email-queue/email-queue.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -37,6 +39,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     AuthModule,
     AuditLogsModule,
     SettingsModule,
+    EmailQueueModule,
   ],
   controllers: [SeedController],
 })

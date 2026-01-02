@@ -27,12 +27,18 @@ let DashboardController = class DashboardController {
         const todayDate = new Date();
         const tomorrowDate = new Date(todayDate);
         tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+        // Calculate "Tomorrow" range relative to the user's "Today" (to)
+        const tomorrowStart = new Date(to);
+        const tomorrowEnd = new Date(to);
+        tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
         const [kpis, catRevenue, topItems, today, tomorrow, chaos] = await Promise.all([
             this.svc.kpis(from, to),
             this.svc.categoryRevenue(from, to),
             this.svc.topItemsPerCategory(from, to, top),
-            this.svc.todayList(),
-            this.svc.tomorrowList(),
+            // Use the explicit user range for "Today"
+            this.svc.todayList(from, to),
+            // Use the calculated next day for "Tomorrow"
+            this.svc.tomorrowList(tomorrowStart, tomorrowEnd),
             this.svc.getChaosReport(todayDate, tomorrowDate),
         ]);
         return { range: { from, to }, kpis, catRevenue, topItems, today, tomorrow, chaos };

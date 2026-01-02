@@ -377,3 +377,23 @@ model AppConfig {
   key   String @id @db.VarChar(100)
   value String @db.Text
 }
+
+enum EmailStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model email_queue {
+  id          BigInt      @id @default(autoincrement())
+  payload     Json        // Stores the full params object including to, subject, html, attachments (base64)
+  status      EmailStatus @default(PENDING)
+  attempts    Int         @default(0)
+  error       String?     @db.Text
+  created_at  DateTime    @default(now())
+  updated_at  DateTime    @updatedAt // To track processing time
+  sent_at     DateTime?
+
+  @@index([status])
+}

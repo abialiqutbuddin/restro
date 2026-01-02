@@ -23,12 +23,12 @@ let DashboardService = class DashboardService {
       SELECT
         COUNT(*)                                            AS total_events,
         COALESCE(SUM(vt.items_total), 0)                   AS items_total,
-        COALESCE(SUM(vt.grand_total - COALESCE(e.discount, 0)), 0)  AS grand_total,
+        COALESCE(SUM(COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)), 0)  AS grand_total,
         COALESCE(SUM(vp.amount_paid), 0)                   AS amount_paid,
-        COALESCE(SUM((vt.grand_total - COALESCE(e.discount, 0)) - vp.amount_paid), 0)  AS outstanding,
+        COALESCE(SUM((COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)) - vp.amount_paid), 0)  AS outstanding,
         ROUND(
           CASE WHEN COUNT(*) = 0 THEN 0
-               ELSE COALESCE(SUM(vt.grand_total - COALESCE(e.discount, 0)), 0) / COUNT(*)
+               ELSE COALESCE(SUM(COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)), 0) / COUNT(*)
           END, 2)                                          AS avg_order_value,
         COALESCE(SUM(e.headcount_est), 0)                  AS total_headcount
       FROM v_event_totals vt
@@ -82,37 +82,37 @@ let DashboardService = class DashboardService {
       ORDER BY category_name, total_item_units DESC;
     `, from, to, topN);
     }
-    async todayList() {
+    async todayList(start, end) {
         return this.prisma.$queryRawUnsafe(`
       SELECT e.id, e.event_datetime, e.venue, e.status,
              cust.name AS customer_name,
-             (vt.grand_total - COALESCE(e.discount, 0)) AS grand_total,
+             (COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)) AS grand_total,
              vp.amount_paid,
-             ((vt.grand_total - COALESCE(e.discount, 0)) - vp.amount_paid) AS outstanding
+             ((COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)) - COALESCE(vp.amount_paid, 0)) AS outstanding
       FROM events e
       LEFT JOIN customers cust ON cust.id = e.customer_id
       LEFT JOIN v_event_totals vt ON vt.event_id = e.id
       LEFT JOIN v_event_payments vp ON vp.event_id = e.id
-      WHERE DATE(e.event_datetime) = CURDATE()
+      WHERE e.event_datetime >= ? AND e.event_datetime < ?
         AND e.status <> 'archived'
       ORDER BY e.event_datetime ASC;
-    `);
+    `, start, end);
     }
-    async tomorrowList() {
+    async tomorrowList(start, end) {
         return this.prisma.$queryRawUnsafe(`
       SELECT e.id, e.event_datetime, e.venue, e.status,
              cust.name AS customer_name,
-             (vt.grand_total - COALESCE(e.discount, 0)) AS grand_total,
+             (COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)) AS grand_total,
              vp.amount_paid,
-             ((vt.grand_total - COALESCE(e.discount, 0)) - vp.amount_paid) AS outstanding
+             ((COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)) - COALESCE(vp.amount_paid, 0)) AS outstanding
       FROM events e
       LEFT JOIN customers cust ON cust.id = e.customer_id
       LEFT JOIN v_event_totals vt ON vt.event_id = e.id
       LEFT JOIN v_event_payments vp ON vp.event_id = e.id
-      WHERE DATE(e.event_datetime) = CURDATE() + INTERVAL 1 DAY
+      WHERE e.event_datetime >= ? AND e.event_datetime < ?
         AND e.status <> 'archived'
       ORDER BY e.event_datetime ASC;
-    `);
+    `, start, end);
     }
     async listByDateRange(from, to) {
         const rows = await this.prisma.$queryRawUnsafe(`
@@ -123,9 +123,9 @@ let DashboardService = class DashboardService {
         e.venue,
         e.status,
         cust.name                            AS customer_name,
-        (vt.grand_total - COALESCE(e.discount, 0)) AS grand_total,
+        (COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)) AS grand_total,
         vp.amount_paid,
-        ((vt.grand_total - COALESCE(e.discount, 0)) - vp.amount_paid)    AS outstanding
+        ((COALESCE(vt.items_total, 0) + COALESCE(e.sales_tax_amount, 0) + COALESCE(e.delivery_charges, 0) + COALESCE(e.service_charges, 0) - COALESCE(e.discount, 0)) - COALESCE(vp.amount_paid, 0))    AS outstanding
       FROM events e
       LEFT JOIN customers       cust ON cust.id = e.customer_id
       LEFT JOIN v_event_totals  vt   ON vt.event_id = e.id
