@@ -198,6 +198,12 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], EventsController.prototype, "archiveByGcal", null);
+
+
+
+
+
+
 __decorate([
     (0, common_1.Post)('archive'),
     __param(0, (0, common_1.Body)()),
