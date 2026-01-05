@@ -179,13 +179,7 @@ export class MagicLinksService {
         if (!link) return { status: 'NOT_FOUND', link: null };
 
         if (link.revoked_at) return { status: 'REVOKED', link };
-        if (link.expires_at < new Date()) {
-            return { status: 'EXPIRED', link };
-        }
-
-        // Auto-approve if order is locked but not yet approved
-        // This logic is removed as per instruction to "modify logic dont auto approve locked orders on access"
-        // await this.autoApproveIfLocked(link.order_id);
+        if (new Date() > link.expires_at) return { status: 'EXPIRED', link };
 
         if (incrementAccessCount) {
             // Increment access count
