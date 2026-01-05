@@ -5,8 +5,10 @@ import { PrismaModule } from '../../database/prisma.module';
 
 import { EventsModule } from '../events/events.module';
 
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+
 @Module({
-    imports: [PrismaModule, EventsModule],
+    imports: [PrismaModule, EventsModule, AuditLogsModule],
     controllers: [MagicLinksController],
     providers: [MagicLinksService],
     exports: [MagicLinksService],

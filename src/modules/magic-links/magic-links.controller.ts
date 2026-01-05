@@ -72,15 +72,21 @@ export class MagicLinksController {
 
     @Get('validate/:token')
     async validate(@Param('token') token: string) {
-        const link = await this.magicLinksService.validateLink(token);
-        if (!link) {
-            return { valid: false };
+        const { status, link } = await this.magicLinksService.validateLinkDetailed(token);
+
+        if (status !== 'VALID' || !link) {
+            return {
+                valid: false,
+                status,
+                orderId: link?.order_id?.toString() || null
+            };
         }
 
         const event = await this.magicLinksService.getEventForLink(link.order_id);
 
         return {
             valid: true,
+            status: 'VALID',
             orderId: link.order_id.toString(),
             expiresAt: link.expires_at,
             event,

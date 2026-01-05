@@ -17,6 +17,8 @@ import { MagicLinksModule } from './modules/magic-links/magic-links.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { SettingsModule } from './modules/settings/settings.module';
+
+import { EmailQueueModule } from './modules/email-queue/email-queue.module';
 import { KitchenReportsModule } from './modules/kitchen-reports/kitchen-reports.module';
 
 @Module({
@@ -39,6 +41,7 @@ import { KitchenReportsModule } from './modules/kitchen-reports/kitchen-reports.
     AuditLogsModule,
     // SettingsModule, // Temporarily disabled due to TS errors
     KitchenReportsModule,
+    EmailQueueModule,
   ],
   controllers: [SeedController],
 })
