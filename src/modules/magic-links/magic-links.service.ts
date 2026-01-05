@@ -162,6 +162,28 @@ export class MagicLinksService {
         });
     }
 
+    /**
+     * Get ALL magic links for an order (including expired/revoked).
+     */
+    async getLinksForOrder(orderId: bigint | string) {
+        let dbOrderId: bigint;
+
+        if (typeof orderId === 'string' && !/^-?\d+$/.test(orderId)) {
+            const event = await this.db.events.findUnique({
+                where: { gcalEventId: orderId },
+            });
+            if (!event) return [];
+            dbOrderId = event.id;
+        } else {
+            dbOrderId = BigInt(orderId);
+        }
+
+        return this.db.order_magic_links.findMany({
+            where: { order_id: dbOrderId },
+            orderBy: { created_at: 'desc' },
+        });
+    }
+
     async validateLink(token: string) {
         const result = await this.validateLinkDetailed(token);
         return result.status === 'VALID' ? result.link : null;

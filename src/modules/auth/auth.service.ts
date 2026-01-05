@@ -30,7 +30,7 @@ export class AuthService {
                 email,
                 password: hashedPassword,
                 name,
-                role: Role.USER, // Default role
+                role: Role.STAFF, // Default role
             },
         });
 

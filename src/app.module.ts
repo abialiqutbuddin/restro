@@ -20,7 +20,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { ChangeRequestsModule } from './modules/change-requests/change-requests.module';
 import { EmailQueueModule } from './modules/email-queue/email-queue.module';
 import { KitchenReportsModule } from './modules/kitchen-reports/kitchen-reports.module';
-
+import { UsersModule } from './modules/users/users.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -43,6 +43,7 @@ import { KitchenReportsModule } from './modules/kitchen-reports/kitchen-reports.
     EmailQueueModule,
     ChangeRequestsModule,
     KitchenReportsModule,
+    UsersModule,
   ],
   controllers: [SeedController],
 })

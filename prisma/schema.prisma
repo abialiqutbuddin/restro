@@ -28,7 +28,7 @@ model users {
   email                    String                  @unique @db.VarChar(150)
   password                 String                  @db.VarChar(255)
   name                     String?                 @db.VarChar(150)
-  role                     Role                    @default(USER)
+  role                     Role                    @default(STAFF)
   is_active                Boolean                 @default(true)
   created_at               DateTime                @default(now())
   updated_at               DateTime                @updatedAt
@@ -331,7 +331,8 @@ enum EventBillingStatus {
 enum Role {
   SUPER_ADMIN
   ADMIN
-  USER
+  STAFF
+  KITCHEN_STAFF
 }
 
 enum ApprovalStatus {

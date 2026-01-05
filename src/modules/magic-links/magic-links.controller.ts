@@ -109,6 +109,31 @@ export class MagicLinksController {
         };
     }
 
+    @Get('history/:orderId')
+    async getHistory(@Param('orderId') orderId: string) {
+        const links = await this.magicLinksService.getLinksForOrder(orderId);
+        const now = new Date();
+
+        return links.map((link: any) => {
+            const isExpired = now > link.expires_at;
+            const isRevoked = !!link.revoked_at;
+            return {
+                id: link.id.toString(),
+                order_id: link.order_id.toString(),
+                token_hash: link.token_hash,
+                raw_token: link.raw_token,
+                created_at: link.created_at,
+                expires_at: link.expires_at,
+                revoked_at: link.revoked_at,
+                access_count: link.access_count,
+                last_accessed_at: link.last_accessed_at,
+                is_expired: isExpired,
+                is_revoked: isRevoked,
+                is_active: !isExpired && !isRevoked,
+            };
+        });
+    }
+
     @Get('validate/:token')
     async validate(@Param('token') token: string) {
         const { status, link } = await this.magicLinksService.validateLinkDetailed(token);

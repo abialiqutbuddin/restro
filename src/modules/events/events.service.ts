@@ -228,9 +228,6 @@ export class EventsService {
     });
   }
 
-  /** Import nested event tree (short tx; no connectOrCreate on email/phone) */
-  // src/modules/events/events.service.ts (inside EventsService)
-
   async importEventTree(dto: ImportEventDto) {
     type CustomerRel =
       | { connect: { id: bigint } }
@@ -250,11 +247,8 @@ export class EventsService {
     // If newOrder is true, create in Google Calendar first
 
     if (dto.newOrder) {
-      // Build basic details for Google
-      //const { start, end } = buildGoogleCentralTimes(dto.eventDatetime, 60);
-      //const end = new Date(start.getTime() + 1 * 60 * 60 * 1000); // +2h default
 
-      const startLocal = dto.eventDatetime.replace(' ', 'T'); // "YYYY-MM-DDTHH:mm:ss.SSS"
+      const startLocal = dto.eventDatetime.replace(' ', 'T');
       const endLocal = (() => {
         const d = new Date(eventInstant.getTime() + 60 * 60 * 1000);
         // format back as "YYYY-MM-DDTHH:mm:ss.SSS"
