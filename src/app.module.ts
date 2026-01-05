@@ -17,6 +17,7 @@ import { MagicLinksModule } from './modules/magic-links/magic-links.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { ChangeRequestsModule } from './modules/change-requests/change-requests.module';
 
 import { EmailQueueModule } from './modules/email-queue/email-queue.module';
 
@@ -40,6 +41,7 @@ import { EmailQueueModule } from './modules/email-queue/email-queue.module';
     AuditLogsModule,
     SettingsModule,
     EmailQueueModule,
+    ChangeRequestsModule,
   ],
   controllers: [SeedController],
 })

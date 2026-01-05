@@ -12,12 +12,13 @@ const magic_links_controller_1 = require("./magic-links.controller");
 const magic_links_service_1 = require("./magic-links.service");
 const prisma_module_1 = require("../../database/prisma.module");
 const events_module_1 = require("../events/events.module");
+const audit_logs_module_1 = require("../audit-logs/audit-logs.module");
 let MagicLinksModule = class MagicLinksModule {
 };
 exports.MagicLinksModule = MagicLinksModule;
 exports.MagicLinksModule = MagicLinksModule = __decorate([
     (0, common_1.Module)({
-        imports: [prisma_module_1.PrismaModule, events_module_1.EventsModule],
+        imports: [prisma_module_1.PrismaModule, events_module_1.EventsModule, audit_logs_module_1.AuditLogsModule],
         controllers: [magic_links_controller_1.MagicLinksController],
         providers: [magic_links_service_1.MagicLinksService],
         exports: [magic_links_service_1.MagicLinksService],

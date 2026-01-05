@@ -127,6 +127,7 @@ let MagicLinksService = class MagicLinksService {
                 data: {
                     order_id: orderId,
                     token_hash: tokenHash,
+                    raw_token: token,
                     created_by_user_id: userId,
                     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days expiry
                 },
@@ -135,11 +136,8 @@ let MagicLinksService = class MagicLinksService {
                 actorId: userId ?? undefined,
                 metadata: { linkId: created.id.toString() },
             });
-            // Return the raw token ONLY here so the requester can see it once.
-            return {
-                ...created,
-                raw_token: token,
-            };
+            // Store active link in cache/memory if needed or rely on DB
+            return created;
         }
         catch (e) {
             if (e.code === 'P2003') {
@@ -162,18 +160,36 @@ let MagicLinksService = class MagicLinksService {
         await this.auditLogs.log(orderId, client_1.AuditActorType.STAFF, 'LINK_REGENERATED', {
             actorId: userId ?? undefined,
         });
-        return this.createLink(orderId, userId);
+        // Create new
+        return this.createLink(orderId, userId ? BigInt(userId) : null);
     }
     /**
      * Get the most recent magic link for an order (active or not).
      */
     async getLinkForOrder(orderId) {
+        let dbOrderId;
+        // If string and not numeric, assume it's a GCal Event ID
+        if (typeof orderId === 'string' && !/^-?\d+$/.test(orderId)) {
+            const event = await this.db.events.findUnique({
+                where: { gcalEventId: orderId },
+            });
+            if (!event)
+                return null;
+            dbOrderId = event.id;
+        }
+        else {
+            dbOrderId = BigInt(orderId);
+        }
         return this.db.order_magic_links.findFirst({
-            where: { order_id: orderId },
+            where: { order_id: dbOrderId },
             orderBy: { created_at: 'desc' },
         });
     }
     async validateLink(token) {
+        const result = await this.validateLinkDetailed(token);
+        return result.status === 'VALID' ? result.link : null;
+    }
+    async validateLinkDetailed(token, incrementAccessCount = true) {
         const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
         const link = await this.db.order_magic_links.findFirst({
             where: {
@@ -181,45 +197,37 @@ let MagicLinksService = class MagicLinksService {
             },
         });
         if (!link)
-            return null;
+            return { status: 'NOT_FOUND', link: null };
         if (link.revoked_at)
-            return null;
-        if (new Date() > link.expires_at)
-            return null; // Expired
-        // Increment access count
-        await this.db.order_magic_links.update({
-            where: { id: link.id },
-            data: {
-                access_count: { increment: 1 },
-                last_accessed_at: new Date(),
-            },
-        });
-        // Log access (CLIENT)
-        // We don't have a user ID for the client, so actorId is null.
-        // To avoid spamming logs on every validation/page load, we could conditionally log?
-        // But the requirement says "Link created, accessed...".
-        // Let's log it.
-        await this.auditLogs.log(link.order_id, client_1.AuditActorType.CLIENT, 'LINK_ACCESSED', {
-            metadata: { tokenHash: tokenHash.substring(0, 8) + '...' },
-        });
-        return link;
-    }
-    async updateOrder(token, dto) {
-        const link = await this.validateLink(token);
-        if (!link)
-            throw new common_1.ForbiddenException('Invalid token');
-        const ev = await this.db.events.findUnique({ where: { id: link.order_id } });
-        if (!ev)
-            throw new common_1.NotFoundException('Order not found');
-        const isLocked = this.eventsService.isEventLocked(ev);
-        if (isLocked) {
-            throw new common_1.ForbiddenException('Order is locked for editing');
+            return { status: 'REVOKED', link };
+        if (link.expires_at < new Date()) {
+            return { status: 'EXPIRED', link };
         }
-        await this.eventsService.updateEventTree(link.order_id, dto);
-        await this.auditLogs.log(link.order_id, client_1.AuditActorType.CLIENT, 'CLIENT_EDIT', {
-            metadata: { changes: dto },
-        });
-        return this.getEventForLink(link.order_id);
+        // Auto-approve if order is locked but not yet approved
+        // This logic is removed as per instruction to "modify logic dont auto approve locked orders on access"
+        // await this.autoApproveIfLocked(link.order_id);
+        if (incrementAccessCount) {
+            // Increment access count
+            await this.db.order_magic_links.update({
+                where: { id: link.id },
+                data: {
+                    access_count: { increment: 1 },
+                    last_accessed_at: new Date(),
+                },
+            });
+            // Log access (CLIENT)
+            await this.auditLogs.log(link.order_id, client_1.AuditActorType.CLIENT, 'LINK_ACCESSED', {
+                metadata: { tokenHash: tokenHash.substring(0, 8) + '...' },
+            });
+        }
+        return { status: 'VALID', link };
+    }
+    async updateOrder(token, changes) {
+        const { status, link } = await this.validateLinkDetailed(token);
+        if (status !== 'VALID' || !link) {
+            throw new common_1.ForbiddenException(`Link is ${status}`);
+        }
+        return this.eventsService.updateEventTree(link.order_id, changes);
     }
     async getEventForLink(orderId) {
         return this.eventsService.getEventViewById(orderId);
@@ -264,6 +272,17 @@ let MagicLinksService = class MagicLinksService {
         await this.auditLogs.log(link.order_id, client_1.AuditActorType.CLIENT, 'ORDER_REJECTED');
         return result;
     }
+    /**
+     * Helper to check if event is locked.
+     */
+    async isEventLocked(orderId) {
+        const event = await this.prisma.events.findUnique({
+            where: { id: orderId },
+        });
+        if (!event)
+            return false;
+        return this.eventsService.isEventLocked(event);
+    }
     async createChangeRequest(token, changes, reason) {
         const link = await this.validateLink(token);
         if (!link)
@@ -271,9 +290,15 @@ let MagicLinksService = class MagicLinksService {
         const event = await this.db.events.findUnique({ where: { id: link.order_id } });
         if (!event)
             throw new common_1.NotFoundException('Order not found');
+        // Allow changes regardless of lock status? Or only if NOT approved?
+        // User requested: "order must be locked in order to request changes" -> ERROR
+        // "modify logic dont auto approve locked orders on access give option to approve order and request change"
+        // Implicitly means we allow requesting changes.
+        /*
         if (!event.is_locked) {
-            throw new common_1.BadRequestException('Order must be locked to request changes');
+            throw new BadRequestException('Order must be locked to request changes');
         }
+        */
         const result = await this.db.order_change_requests.create({
             data: {
                 order_id: link.order_id,
@@ -286,6 +311,56 @@ let MagicLinksService = class MagicLinksService {
             metadata: { reason, changes },
         });
         return result;
+    }
+    async listLinks(params) {
+        const { skip = 0, take = 20, status = 'all' } = params;
+        const now = new Date();
+        let where = {};
+        if (status === 'active') {
+            where = {
+                revoked_at: null,
+                expires_at: { gt: now },
+            };
+        }
+        else if (status === 'expired') {
+            where = {
+                OR: [
+                    { expires_at: { lte: now } },
+                ],
+            };
+        }
+        else if (status === 'revoked') {
+            where = {
+                revoked_at: { not: null },
+            };
+        }
+        const [items, total] = await Promise.all([
+            this.db.order_magic_links.findMany({
+                where,
+                skip,
+                take,
+                orderBy: { created_at: 'desc' },
+                include: {
+                    event: {
+                        select: {
+                            id: true,
+                            customer: { select: { name: true } },
+                            event_datetime: true,
+                        }
+                    }
+                }
+            }),
+            this.db.order_magic_links.count({ where }),
+        ]);
+        return { items, total };
+    }
+    async revokeLink(id) {
+        return this.db.order_magic_links.update({
+            where: { id },
+            data: {
+                revoked_at: new Date(),
+            },
+        });
     }
 };
 exports.MagicLinksService = MagicLinksService;

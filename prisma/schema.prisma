@@ -311,6 +311,7 @@ model order_magic_links {
   created_by_user_id BigInt?
   last_accessed_at DateTime?
   access_count     Int       @default(0)
+  raw_token        String?   @db.VarChar(255) // Stores the raw token for "Copy Link" feature
 
   // relations
   event events @relation(fields: [order_id], references: [id], onDelete: Cascade)

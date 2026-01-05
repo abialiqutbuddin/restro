@@ -47,12 +47,6 @@ async function main() {
         create: { name: 'Item', slug: 'item' },
     });
 
-    // We can assume other categories exist or this is just fixing the missing units.
-
-    // Map existing categories to units if needed.
-    // User asked to add "Per Item" unit in category units.
-    // Let's bind 'per_item' unit to 'Item' category.
-
     // Helper to add unit to category
     const addUnit = async (catSlug: string, unitCode: string, isDefault = false) => {
         const cat = await prisma.category.findUnique({ where: { slug: catSlug } });
@@ -66,12 +60,6 @@ async function main() {
 
     await addUnit('item', 'per_item', true);
     await addUnit('item', 'each', false);
-
-    // Also ensure 'per_box' is available for typical categories if they exist
-    // This part is generic, might fail if categories don't exist, so we skip specific names
-    // unless known. User request: "add per_box and per_item in category units"
-    // I'll leave it as defining the units primarily, as linking requires knowing the categories.
-    // I've linked 'per_item' to 'item' category above.
 
     console.log('Seeding completed.');
 }

@@ -7,49 +7,88 @@ export class MagicLinksController {
     constructor(private readonly magicLinksService: MagicLinksService) { }
 
     @Post('generate')
-    async generate(@Body() body: { orderId: number | string; userId?: number | string }) {
-        try {
-            console.log('Generating Magic Link for order:', body.orderId, 'User:', body.userId);
-            const link = await this.magicLinksService.generateLink(
-                BigInt(body.orderId),
-                body.userId ? BigInt(body.userId) : null,
-            );
-            // Convert BigInt to string for JSON response
-            return {
-                ...link,
-                id: link.id.toString(),
-                order_id: link.order_id.toString(),
-                created_by_user_id: link.created_by_user_id?.toString() || null,
-            };
-        } catch (e) {
-            console.error('Error generating magic link:', e);
-            throw e;
-        }
-    }
-
-    @Post('regenerate')
-    async regenerate(@Body() body: { orderId: number | string; userId?: number | string }) {
-        const link = await this.magicLinksService.regenerateLink(
+    async generate(@Body() body: { orderId: string, userId?: string }) {
+        const result = await this.magicLinksService.generateLink(
             BigInt(body.orderId),
             body.userId ? BigInt(body.userId) : null,
         );
+
         return {
-            ...link,
-            id: link.id.toString(),
-            order_id: link.order_id.toString(),
-            created_by_user_id: link.created_by_user_id?.toString() || null,
+            token: result.raw_token,
+            link: {
+                id: result.id.toString(),
+                order_id: result.order_id.toString(),
+                token_hash: result.token_hash,
+                created_at: result.created_at,
+                expires_at: result.expires_at,
+                created_by_user_id: result.created_by_user_id?.toString() || null,
+            },
         };
+    }
+
+    @Post('regenerate')
+    async regenerate(@Body() body: { orderId: string, userId?: string }) {
+        const result = await this.magicLinksService.regenerateLink(
+            BigInt(body.orderId),
+            body.userId,
+        );
+
+        return {
+            token: result.raw_token,
+            link: {
+                id: result.id.toString(),
+                order_id: result.order_id.toString(),
+                token_hash: result.token_hash,
+                created_at: result.created_at,
+                expires_at: result.expires_at,
+                created_by_user_id: result.created_by_user_id?.toString() || null,
+            },
+        };
+    }
+
+    @Get()
+    async list(
+        @Query('skip') skip?: number,
+        @Query('take') take?: number,
+        @Query('status') status?: 'active' | 'expired' | 'revoked' | 'all',
+    ) {
+        const result = await this.magicLinksService.listLinks({
+            skip: skip ? Number(skip) : undefined,
+            take: take ? Number(take) : undefined,
+            status,
+        });
+
+        return {
+            items: result.items.map((link: any) => ({
+                id: link.id.toString(),
+                order_id: link.order_id.toString(),
+                token_hash: link.token_hash,
+                raw_token: link.raw_token,
+                created_at: link.created_at,
+                expires_at: link.expires_at,
+                revoked_at: link.revoked_at,
+                last_accessed_at: link.last_accessed_at,
+                access_count: link.access_count,
+                event: {
+                    id: link.event.id.toString(),
+                    customer_name: link.event.customer?.name ?? 'Unknown',
+                    event_date: link.event.event_datetime,
+                }
+            })),
+            total: result.total,
+        };
+    }
+
+    @Patch(':id/revoke')
+    async revoke(@Param('id') id: string) {
+        await this.magicLinksService.revokeLink(BigInt(id));
+        return { success: true };
     }
 
     @Get('status/:orderId')
     async getStatus(@Param('orderId') orderId: string) {
         // orderId is likely a CUID (string) or number. The service should handle it.
-        // If the service expects a number (BigInt), but we moved to CUIDs, the service also needs to be compatible.
-        // Given the error "Cannot convert ... to a BigInt", the ID is definitely a string CUID.
-        // We pass it as string, and assume service can handle it or we cast to any if service type is strict but implementation allows string.
-        // Actually, looking at generate, it takes number|string.
-        // Let's assume getLinkForOrder can take string or BigInt.
-        const link = await this.magicLinksService.getLinkForOrder(orderId as any);
+        const link = await this.magicLinksService.getLinkForOrder(BigInt(orderId));
         if (!link) {
             return { exists: false };
         }
@@ -93,28 +132,21 @@ export class MagicLinksController {
         };
     }
 
-    @Patch('update-order/:token')
+    @Put('order/:token')
     async updateOrder(@Param('token') token: string, @Body() dto: ClientUpdateEventDto) {
         return this.magicLinksService.updateOrder(token, dto);
     }
 
     @Post('approve/:token')
     async approve(@Param('token') token: string) {
-        const result = await this.magicLinksService.approveLink(token);
-        return {
-            success: true,
-            status: 'APPROVED',
-            approved_at: result.approved_at,
-        };
+        await this.magicLinksService.approveLink(token);
+        return { success: true };
     }
 
     @Post('reject/:token')
     async reject(@Param('token') token: string) {
         await this.magicLinksService.rejectLink(token);
-        return {
-            success: true,
-            status: 'REJECTED',
-        };
+        return { success: true };
     }
 
     @Post('change-request/:token')
@@ -122,13 +154,17 @@ export class MagicLinksController {
         @Param('token') token: string,
         @Body() body: { changes: any; reason: string },
     ) {
-        if (!body.changes || !body.reason) {
-            throw new BadRequestException('Changes and reason are required');
-        }
-        await this.magicLinksService.createChangeRequest(token, body.changes, body.reason);
+        if (!body.reason) throw new BadRequestException('Reason is required');
+
+        const result = await this.magicLinksService.createChangeRequest(
+            token,
+            body.changes,
+            body.reason,
+        );
+
         return {
             success: true,
-            status: 'PENDING',
+            id: result.id.toString(),
         };
     }
 }

@@ -35,6 +35,58 @@ let AuditLogsService = class AuditLogsService {
             // For now, we log the error but allow flow to proceed unless critical.
         }
     }
+    async findAll(query) {
+        const where = {};
+        if (query.action) {
+            where.action = query.action;
+        }
+        if (query.orderId) {
+            where.order_id = BigInt(query.orderId);
+        }
+        const skip = query.skip ? Number(query.skip) : 0;
+        const take = query.take ? Number(query.take) : 50;
+        const [total, logs] = await Promise.all([
+            this.prisma.order_audit_logs.count({ where }),
+            this.prisma.order_audit_logs.findMany({
+                where,
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                        },
+                    },
+                    event: {
+                        select: {
+                            id: true,
+                            // Add other event fields if needed
+                        },
+                    },
+                },
+                orderBy: {
+                    timestamp: 'desc',
+                },
+                skip,
+                take,
+            }),
+        ]);
+        // Serialize BigInt
+        const data = JSON.parse(JSON.stringify(logs, (key, value) => typeof value === 'bigint' ? value.toString() : value));
+        return { items: data, total };
+    }
+    async updateStatus(id, status) {
+        const logId = BigInt(id);
+        const log = await this.prisma.order_audit_logs.findUnique({ where: { id: logId } });
+        if (!log)
+            return null;
+        const currentMeta = log.metadata || {};
+        const newMeta = { ...currentMeta, status };
+        return this.prisma.order_audit_logs.update({
+            where: { id: logId },
+            data: { metadata: newMeta },
+        });
+    }
 };
 exports.AuditLogsService = AuditLogsService;
 exports.AuditLogsService = AuditLogsService = __decorate([

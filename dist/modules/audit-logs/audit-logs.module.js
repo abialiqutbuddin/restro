@@ -9,14 +9,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuditLogsModule = void 0;
 const common_1 = require("@nestjs/common");
 const audit_logs_service_1 = require("./audit-logs.service");
-const prisma_service_1 = require("../../database/prisma.service");
+const audit_logs_controller_1 = require("./audit-logs.controller");
+const prisma_module_1 = require("../../database/prisma.module");
 let AuditLogsModule = class AuditLogsModule {
 };
 exports.AuditLogsModule = AuditLogsModule;
 exports.AuditLogsModule = AuditLogsModule = __decorate([
-    (0, common_1.Global)(),
     (0, common_1.Module)({
-        providers: [audit_logs_service_1.AuditLogsService, prisma_service_1.PrismaService],
+        imports: [prisma_module_1.PrismaModule],
+        controllers: [audit_logs_controller_1.AuditLogsController],
+        providers: [audit_logs_service_1.AuditLogsService],
         exports: [audit_logs_service_1.AuditLogsService],
     })
 ], AuditLogsModule);

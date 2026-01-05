@@ -53,6 +53,7 @@ __decorate([
 ], SendEmailDto.prototype, "html", void 0);
 __decorate([
     (0, class_transformer_1.Transform)(({ value }) => typeof value === 'string' ? value.replace(/^data:application\/pdf;base64,/, '') : value),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBase64)(),
     __metadata("design:type", String)
 ], SendEmailDto.prototype, "pdfBase64", void 0);

@@ -888,6 +888,7 @@ export class EventsService {
       salesTaxPct,
       is_locked: isLocked,
       cutoff_time: cutoffTime.toISOString(),
+      client_approval_status: ev.client_approval_status ?? 'PENDING',
       totals: { itemsSubtotal, delivery, service, discount, salesTaxAmount, grandTotal },
       caterings,
     };

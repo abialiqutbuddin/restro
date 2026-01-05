@@ -14,20 +14,20 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailController = void 0;
 const common_1 = require("@nestjs/common");
-const email_service_1 = require("./email.service");
+const email_queue_service_1 = require("../email-queue/email-queue.service");
 const send_email_dto_1 = require("./dto/send-email.dto");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 let EmailController = class EmailController {
-    constructor(email) {
-        this.email = email;
+    constructor(emailQueue) {
+        this.emailQueue = emailQueue;
     }
     async send(body) {
         const dto = (0, class_transformer_1.plainToInstance)(send_email_dto_1.SendEmailDto, body);
         await (0, class_validator_1.validateOrReject)(dto);
         const to = Array.isArray(dto.to) ? dto.to : dto.to ? [dto.to] : [];
         const cc = Array.isArray(dto.cc) ? dto.cc : dto.cc ? [dto.cc] : undefined;
-        const result = await this.email.sendPdfEmail({
+        await this.emailQueue.addToQueue({
             subject: dto.subject,
             to,
             cc,
@@ -36,7 +36,7 @@ let EmailController = class EmailController {
             pdfBase64: dto.pdfBase64,
             pdfFilename: dto.pdfFilename,
         });
-        return { ok: true, ...result };
+        return { ok: true, queued: true };
     }
 };
 exports.EmailController = EmailController;
@@ -49,5 +49,5 @@ __decorate([
 ], EmailController.prototype, "send", null);
 exports.EmailController = EmailController = __decorate([
     (0, common_1.Controller)('email'),
-    __metadata("design:paramtypes", [email_service_1.EmailService])
+    __metadata("design:paramtypes", [email_queue_service_1.EmailQueueService])
 ], EmailController);

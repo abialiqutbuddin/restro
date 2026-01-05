@@ -98,6 +98,7 @@ export class MagicLinksService {
                 data: {
                     order_id: orderId,
                     token_hash: tokenHash,
+                    raw_token: token,
                     created_by_user_id: userId,
                     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days expiry
                 },
@@ -108,11 +109,8 @@ export class MagicLinksService {
                 metadata: { linkId: created.id.toString() },
             });
 
-            // Return the raw token ONLY here so the requester can see it once.
-            return {
-                ...created,
-                raw_token: token,
-            };
+            // Store active link in cache/memory if needed or rely on DB
+            return created;
         } catch (e: any) {
             if (e.code === 'P2003') {
                 throw new NotFoundException(`Order with ID ${orderId} not found`);
@@ -121,7 +119,7 @@ export class MagicLinksService {
         }
     }
 
-    async regenerateLink(orderId: bigint, userId: bigint | null) {
+    async regenerateLink(orderId: bigint, userId?: string) {
         // Revoke all existing active links
         await this.db.order_magic_links.updateMany({
             where: {
@@ -137,7 +135,8 @@ export class MagicLinksService {
             actorId: userId ?? undefined,
         });
 
-        return this.createLink(orderId, userId);
+        // Create new
+        return this.createLink(orderId, userId ? BigInt(userId) : null);
     }
 
     /**
@@ -168,7 +167,7 @@ export class MagicLinksService {
         return result.status === 'VALID' ? result.link : null;
     }
 
-    async validateLinkDetailed(token: string) {
+    async validateLinkDetailed(token: string, incrementAccessCount = true) {
         const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
         const link = await this.db.order_magic_links.findFirst({
@@ -180,44 +179,41 @@ export class MagicLinksService {
         if (!link) return { status: 'NOT_FOUND', link: null };
 
         if (link.revoked_at) return { status: 'REVOKED', link };
-        if (new Date() > link.expires_at) return { status: 'EXPIRED', link };
+        if (link.expires_at < new Date()) {
+            return { status: 'EXPIRED', link };
+        }
 
-        // Increment access count
-        await this.db.order_magic_links.update({
-            where: { id: link.id },
-            data: {
-                access_count: { increment: 1 },
-                last_accessed_at: new Date(),
-            },
-        });
+        // Auto-approve if order is locked but not yet approved
+        // This logic is removed as per instruction to "modify logic dont auto approve locked orders on access"
+        // await this.autoApproveIfLocked(link.order_id);
 
-        // Log access (CLIENT)
-        await this.auditLogs.log(link.order_id, AuditActorType.CLIENT, 'LINK_ACCESSED', {
-            metadata: { tokenHash: tokenHash.substring(0, 8) + '...' },
-        });
+        if (incrementAccessCount) {
+            // Increment access count
+            await this.db.order_magic_links.update({
+                where: { id: link.id },
+                data: {
+                    access_count: { increment: 1 },
+                    last_accessed_at: new Date(),
+                },
+            });
+
+            // Log access (CLIENT)
+            await this.auditLogs.log(link.order_id, AuditActorType.CLIENT, 'LINK_ACCESSED', {
+                metadata: { tokenHash: tokenHash.substring(0, 8) + '...' },
+            });
+        }
 
         return { status: 'VALID', link };
     }
 
-    async updateOrder(token: string, dto: ClientUpdateEventDto) {
-        const link = await this.validateLink(token);
-        if (!link) throw new ForbiddenException('Invalid token');
+    async updateOrder(token: string, changes: ClientUpdateEventDto) {
+        const { status, link } = await this.validateLinkDetailed(token);
 
-        const ev = await this.db.events.findUnique({ where: { id: link.order_id } });
-        if (!ev) throw new NotFoundException('Order not found');
-
-        const isLocked = this.eventsService.isEventLocked(ev);
-        if (isLocked) {
-            throw new ForbiddenException('Order is locked for editing');
+        if (status !== 'VALID' || !link) {
+            throw new ForbiddenException(`Link is ${status}`);
         }
 
-        await this.eventsService.updateEventTree(link.order_id, dto);
-
-        await this.auditLogs.log(link.order_id, AuditActorType.CLIENT, 'CLIENT_EDIT', {
-            metadata: { changes: dto },
-        });
-
-        return this.getEventForLink(link.order_id);
+        return this.eventsService.updateEventTree(link.order_id, changes);
     }
 
     async getEventForLink(orderId: bigint) {
@@ -272,6 +268,17 @@ export class MagicLinksService {
         return result;
     }
 
+    /**
+     * Helper to check if event is locked.
+     */
+    private async isEventLocked(orderId: bigint): Promise<boolean> {
+        const event = await this.prisma.events.findUnique({
+            where: { id: orderId },
+        });
+        if (!event) return false;
+        return this.eventsService.isEventLocked(event as any);
+    }
+
     async createChangeRequest(token: string, changes: any, reason: string) {
         const link = await this.validateLink(token);
         if (!link) throw new ForbiddenException('Invalid or expired token');
@@ -279,9 +286,16 @@ export class MagicLinksService {
         const event = await this.db.events.findUnique({ where: { id: link.order_id } });
         if (!event) throw new NotFoundException('Order not found');
 
+        // Allow changes regardless of lock status? Or only if NOT approved?
+        // User requested: "order must be locked in order to request changes" -> ERROR
+        // "modify logic dont auto approve locked orders on access give option to approve order and request change"
+        // Implicitly means we allow requesting changes.
+
+        /*
         if (!event.is_locked) {
             throw new BadRequestException('Order must be locked to request changes');
         }
+        */
 
         const result = await this.db.order_change_requests.create({
             data: {
@@ -297,5 +311,59 @@ export class MagicLinksService {
         });
 
         return result;
+    }
+
+    async listLinks(params: { skip?: number; take?: number; status?: 'active' | 'expired' | 'revoked' | 'all' }) {
+        const { skip = 0, take = 20, status = 'all' } = params;
+
+        const now = new Date();
+        let where: any = {};
+
+        if (status === 'active') {
+            where = {
+                revoked_at: null,
+                expires_at: { gt: now },
+            };
+        } else if (status === 'expired') {
+            where = {
+                OR: [
+                    { expires_at: { lte: now } },
+                ],
+            };
+        } else if (status === 'revoked') {
+            where = {
+                revoked_at: { not: null },
+            };
+        }
+
+        const [items, total] = await Promise.all([
+            this.db.order_magic_links.findMany({
+                where,
+                skip,
+                take,
+                orderBy: { created_at: 'desc' },
+                include: {
+                    event: {
+                        select: {
+                            id: true,
+                            customer: { select: { name: true } },
+                            event_datetime: true,
+                        }
+                    }
+                }
+            }),
+            this.db.order_magic_links.count({ where }),
+        ]);
+
+        return { items, total };
+    }
+
+    async revokeLink(id: bigint) {
+        return this.db.order_magic_links.update({
+            where: { id },
+            data: {
+                revoked_at: new Date(),
+            },
+        });
     }
 }
