@@ -200,12 +200,8 @@ let MagicLinksService = class MagicLinksService {
             return { status: 'NOT_FOUND', link: null };
         if (link.revoked_at)
             return { status: 'REVOKED', link };
-        if (link.expires_at < new Date()) {
+        if (new Date() > link.expires_at)
             return { status: 'EXPIRED', link };
-        }
-        // Auto-approve if order is locked but not yet approved
-        // This logic is removed as per instruction to "modify logic dont auto approve locked orders on access"
-        // await this.autoApproveIfLocked(link.order_id);
         if (incrementAccessCount) {
             // Increment access count
             await this.db.order_magic_links.update({

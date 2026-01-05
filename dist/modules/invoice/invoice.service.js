@@ -45,10 +45,11 @@ let InvoicesService = class InvoicesService {
                     envelope: dto.envelope,
                     eventLines: dto.eventLines,
                     items: dto.items,
+                    updatedAt: new Date(),
                 },
             });
             if (events.length) {
-                await tx.invoiceEvent.createMany({
+                await tx.invoiceevent.createMany({
                     data: events.map((ev) => ({
                         invoiceId: invoice.id,
                         eventId: ev.id,
@@ -65,8 +66,8 @@ let InvoicesService = class InvoicesService {
             return tx.invoice.findUnique({
                 where: { id: invoice.id },
                 include: {
-                    eventLinks: {
-                        include: { event: true },
+                    invoiceevent: {
+                        include: { events: true },
                     },
                 },
             });
@@ -76,7 +77,7 @@ let InvoicesService = class InvoicesService {
         return this.prisma.invoice.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
-                eventLinks: true,
+                invoiceevent: true,
             },
         });
     }
@@ -84,8 +85,8 @@ let InvoicesService = class InvoicesService {
         const invoice = await this.prisma.invoice.findUnique({
             where: { invoiceNumber },
             include: {
-                eventLinks: {
-                    include: { event: true },
+                invoiceevent: {
+                    include: { events: true },
                 },
             },
         });
@@ -107,7 +108,7 @@ let InvoicesService = class InvoicesService {
                 data: { status: 'PAID' },
             });
             await tx.events.updateMany({
-                where: { invoiceEvents: { some: { invoiceId: updated.id } } },
+                where: { invoiceevent: { some: { invoiceId: updated.id } } },
                 data: { billing_status: client_1.EventBillingStatus.paid },
             });
             return updated;
@@ -133,7 +134,7 @@ let InvoicesService = class InvoicesService {
             where: { id: { in: ids } },
             select: {
                 id: true,
-                invoiceEvents: { select: { invoiceId: true } },
+                invoiceevent: { select: { invoiceId: true } },
                 order_total: true,
             },
         });
@@ -143,7 +144,7 @@ let InvoicesService = class InvoicesService {
                 .map((id) => id.toString());
             throw new common_1.NotFoundException(`Events not found: ${missing.join(', ')}`);
         }
-        const alreadyLinked = events.filter((ev) => ev.invoiceEvents.length);
+        const alreadyLinked = events.filter((ev) => ev.invoiceevent.length);
         if (alreadyLinked.length) {
             throw new common_1.BadRequestException(`Events already invoiced: ${alreadyLinked.map((ev) => ev.id.toString()).join(', ')}`);
         }

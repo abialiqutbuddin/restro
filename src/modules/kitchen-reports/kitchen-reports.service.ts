@@ -35,7 +35,7 @@ interface KitchenConsolidationReport {
 
 @Injectable()
 export class KitchenReportsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   /**
    * Normalize menu item names to handle variations and typos
@@ -327,7 +327,7 @@ export class KitchenReportsService {
     }
 
     // Fetch all prep statuses for these events and menu items in one query
-    const prepStatuses = await this.prisma.kitchen_prep_status.findMany({
+    const prepStatuses = await (this.prisma as any).kitchenPrepStatusModel.findMany({
       where: {
         event_id: { in: Array.from(eventIds).map(id => BigInt(id)) },
         menu_item_id: { in: Array.from(menuItemIds).map(id => BigInt(id)) },
@@ -385,7 +385,7 @@ export class KitchenReportsService {
             // If any item is in progress or completed, update status accordingly
             // Priority: completed > in_progress > not_started
             if (itemStatus === 'completed' ||
-                (itemStatus === 'in_progress' && existingEvent.status === 'not_started')) {
+              (itemStatus === 'in_progress' && existingEvent.status === 'not_started')) {
               existingEvent.status = itemStatus;
             }
           }
@@ -409,7 +409,7 @@ export class KitchenReportsService {
 
     try {
       // Find existing record first
-      const existing = await this.prisma.kitchen_prep_status.findFirst({
+      const existing = await (this.prisma as any).kitchenPrepStatusModel.findFirst({
         where: {
           event_id: BigInt(eventId),
           menu_item_id: BigInt(menuItemId),
@@ -421,7 +421,7 @@ export class KitchenReportsService {
 
       if (existing) {
         // Update existing record
-        prepStatus = await this.prisma.kitchen_prep_status.update({
+        prepStatus = await (this.prisma as any).kitchenPrepStatusModel.update({
           where: {
             id: existing.id,
           },
@@ -459,7 +459,7 @@ export class KitchenReportsService {
         });
       } else {
         // Create new record
-        prepStatus = await this.prisma.kitchen_prep_status.create({
+        prepStatus = await (this.prisma as any).kitchenPrepStatusModel.create({
           data: {
             event_id: BigInt(eventId),
             menu_item_id: BigInt(menuItemId),

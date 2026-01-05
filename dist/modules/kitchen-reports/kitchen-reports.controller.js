@@ -61,13 +61,25 @@ let KitchenReportsController = class KitchenReportsController {
     /**
      * GET /kitchen-reports/daily-prep-list
      *
-     * Returns a formatted daily prep list for the UI with event breakdown.
+     * Returns a formatted daily prep list for the UI with event breakdown and prep status.
      * Groups items together with size variations and shows which events need each item.
+     * Includes chef preparation status (not_started, in_progress, completed) for each item.
      *
-     * Query Parameters: Same as consolidation endpoint
+     * Query Parameters (all optional):
+     * - date: Single date (YYYY-MM-DD) - gets all events for that specific day
+     * - startDate: Start of date range (YYYY-MM-DD)
+     * - endDate: End of date range (YYYY-MM-DD)
+     * - eventType: Filter by event type (e.g., "wedding", "corporate", "birthday")
+     * - timeWindow: Filter by time of day ("morning", "afternoon", "evening")
+     * - eventIds: Comma-separated list of specific event IDs
      *
-     * Example:
+     * If NO filters are provided, returns ALL events
+     *
+     * Examples:
+     * GET /kitchen-reports/daily-prep-list
+     * GET /kitchen-reports/daily-prep-list?date=2026-01-05
      * GET /kitchen-reports/daily-prep-list?startDate=2025-12-31&endDate=2026-01-06
+     * GET /kitchen-reports/daily-prep-list?eventType=wedding&timeWindow=evening
      */
     async getDailyPrepList(query) {
         return this.kitchenReportsService.getDailyPrepList(query);

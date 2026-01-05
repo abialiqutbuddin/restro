@@ -34,7 +34,7 @@ import { KitchenReportsModule } from './modules/kitchen-reports/kitchen-reports.
     PaymentsModule,
     DashboardModule,
     SquareModule,
-    // InvoicesModule, // Temporarily disabled due to TS errors
+    InvoicesModule,
     EmailModule,
     MagicLinksModule,
     AuthModule,

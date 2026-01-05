@@ -57,7 +57,7 @@ model menu_items {
   created_at                DateTime                    @default(now())
   updated_at                DateTime                    @updatedAt
   event_catering_menu_items event_catering_menu_items[]
-  kitchen_prep_status       kitchen_prep_status[]
+  kitchen_prep_status       KitchenPrepStatusModel[]
 }
 
 model sizes {
@@ -68,7 +68,7 @@ model sizes {
   created_at                DateTime                    @default(now())
   updated_at                DateTime                    @updatedAt
   event_catering_menu_items event_catering_menu_items[]
-  kitchen_prep_status       kitchen_prep_status[]
+  kitchen_prep_status       KitchenPrepStatusModel[]
 }
 
 model pricing_unit {
@@ -126,7 +126,7 @@ model events {
   audit_logs             order_audit_logs[]
   change_requests        order_change_requests[]
   magic_links            order_magic_links[]
-  kitchen_prep_status    kitchen_prep_status[]
+  kitchen_prep_status    KitchenPrepStatusModel[]
 
   @@index([customer_id])
   @@index([billing_status, event_datetime])
@@ -252,8 +252,8 @@ model order_audit_logs {
   action     String         @db.VarChar(100)
   timestamp  DateTime       @default(now())
   metadata   Json?
-  user       users?         @relation(fields: [actor_id], references: [id])
   event      events         @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  user       users?         @relation(fields: [actor_id], references: [id])
 
   @@index([order_id])
   @@index([actor_id])
@@ -262,6 +262,8 @@ model order_audit_logs {
 model appconfig {
   key   String @id @db.VarChar(100)
   value String @db.Text
+
+  @@map("AppConfig")
 }
 
 model invoice {
@@ -290,6 +292,8 @@ model invoice {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime
   invoiceevent  invoiceevent[]
+
+  @@map("Invoice")
 }
 
 model invoiceevent {
@@ -354,7 +358,7 @@ enum KitchenPrepStatus {
   completed
 }
 
-model kitchen_prep_status {
+model KitchenPrepStatusModel {
   id            BigInt            @id @default(autoincrement())
   event_id      BigInt
   menu_item_id  BigInt
@@ -372,6 +376,7 @@ model kitchen_prep_status {
   @@index([event_id])
   @@index([menu_item_id])
   @@index([status])
+  @@map("kitchen_prep_status")
 }
 
 enum EmailStatus {

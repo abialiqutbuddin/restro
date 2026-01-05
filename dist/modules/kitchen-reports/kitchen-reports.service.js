@@ -244,14 +244,18 @@ let KitchenReportsService = class KitchenReportsService {
     /**
      * Get daily consolidated prep list formatted for UI
      * Returns items grouped with event breakdown
+     *
+     * Supported Filters:
+     * - date: Single date (YYYY-MM-DD)
+     * - startDate & endDate: Date range
+     * - eventType: Filter by event type (e.g., wedding, corporate)
+     * - timeWindow: Filter by time of day (morning, afternoon, evening)
+     * - eventIds: Filter by specific event IDs (comma-separated)
+     *
+     * If no filters are provided, returns all events
      */
     async getDailyPrepList(query) {
-        // If no date filters provided, default to showing events from today onwards
-        if (!query.date && !query.startDate && !query.endDate) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            query.startDate = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-        }
+        // No default date filter - show all events if no filters provided
         const report = await this.getKitchenConsolidationReport({
             ...query,
             showEventBreakdown: true,
@@ -269,7 +273,7 @@ let KitchenReportsService = class KitchenReportsService {
             }
         }
         // Fetch all prep statuses for these events and menu items in one query
-        const prepStatuses = await this.prisma.kitchen_prep_status.findMany({
+        const prepStatuses = await this.prisma.kitchenPrepStatusModel.findMany({
             where: {
                 event_id: { in: Array.from(eventIds).map(id => BigInt(id)) },
                 menu_item_id: { in: Array.from(menuItemIds).map(id => BigInt(id)) },
@@ -311,6 +315,8 @@ let KitchenReportsService = class KitchenReportsService {
                             venue: event.venue,
                             quantity: event.quantity,
                             status: itemStatus,
+                            menuItemId: item.menuItemId,
+                            sizeId: item.sizeId,
                         });
                     }
                     else {
@@ -337,60 +343,103 @@ let KitchenReportsService = class KitchenReportsService {
      */
     async updatePrepStatus(dto) {
         const { eventId, menuItemId, sizeId, status, notes } = dto;
-        // Use upsert to create or update the status
-        const whereClause = {
-            event_id: BigInt(eventId),
-            menu_item_id: BigInt(menuItemId),
-            size_id: sizeId ? BigInt(sizeId) : null,
-        };
-        const prepStatus = await this.prisma.kitchen_prep_status.upsert({
-            where: {
-                unique_event_item_size: whereClause,
-            },
-            update: {
-                status,
-                notes,
-                updated_at: new Date(),
-            },
-            create: {
-                event_id: BigInt(eventId),
-                menu_item_id: BigInt(menuItemId),
-                ...(sizeId && { size_id: BigInt(sizeId) }),
-                status,
-                notes,
-            },
-            include: {
-                event: {
-                    select: {
-                        id: true,
-                        event_datetime: true,
-                        venue: true,
-                        customer: {
+        try {
+            // Find existing record first
+            const existing = await this.prisma.kitchenPrepStatusModel.findFirst({
+                where: {
+                    event_id: BigInt(eventId),
+                    menu_item_id: BigInt(menuItemId),
+                    size_id: sizeId ? BigInt(sizeId) : null,
+                },
+            });
+            let prepStatus;
+            if (existing) {
+                // Update existing record
+                prepStatus = await this.prisma.kitchenPrepStatusModel.update({
+                    where: {
+                        id: existing.id,
+                    },
+                    data: {
+                        status,
+                        notes,
+                        updated_at: new Date(),
+                    },
+                    include: {
+                        event: {
                             select: {
+                                id: true,
+                                event_datetime: true,
+                                venue: true,
+                                customer: {
+                                    select: {
+                                        name: true,
+                                    },
+                                },
+                            },
+                        },
+                        menu_item: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                        size: {
+                            select: {
+                                id: true,
                                 name: true,
                             },
                         },
                     },
-                },
-                menu_item: {
-                    select: {
-                        id: true,
-                        name: true,
+                });
+            }
+            else {
+                // Create new record
+                prepStatus = await this.prisma.kitchenPrepStatusModel.create({
+                    data: {
+                        event_id: BigInt(eventId),
+                        menu_item_id: BigInt(menuItemId),
+                        ...(sizeId && { size_id: BigInt(sizeId) }),
+                        status,
+                        notes,
                     },
-                },
-                size: {
-                    select: {
-                        id: true,
-                        name: true,
+                    include: {
+                        event: {
+                            select: {
+                                id: true,
+                                event_datetime: true,
+                                venue: true,
+                                customer: {
+                                    select: {
+                                        name: true,
+                                    },
+                                },
+                            },
+                        },
+                        menu_item: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                        size: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
                     },
-                },
-            },
-        });
-        return {
-            success: true,
-            message: 'Prep status updated successfully',
-            data: prepStatus,
-        };
+                });
+            }
+            return {
+                success: true,
+                message: 'Prep status updated successfully',
+                data: prepStatus,
+            };
+        }
+        catch (error) {
+            console.error('Error updating prep status:', error);
+            throw error;
+        }
     }
 };
 exports.KitchenReportsService = KitchenReportsService;

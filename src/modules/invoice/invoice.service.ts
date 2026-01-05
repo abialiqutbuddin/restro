@@ -8,7 +8,7 @@ type TxLike = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class InvoicesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async create(dto: CreateInvoiceDto) {
     const eventIds = (dto.eventIds ?? []).map((id) => BigInt(id));
@@ -39,11 +39,12 @@ export class InvoicesService {
           envelope: dto.envelope,
           eventLines: dto.eventLines,
           items: dto.items,
+          updatedAt: new Date(),
         },
       });
 
       if (events.length) {
-        await tx.invoiceEvent.createMany({
+        await tx.invoiceevent.createMany({
           data: events.map((ev) => ({
             invoiceId: invoice.id,
             eventId: ev.id,
@@ -62,8 +63,8 @@ export class InvoicesService {
       return tx.invoice.findUnique({
         where: { id: invoice.id },
         include: {
-          eventLinks: {
-            include: { event: true },
+          invoiceevent: {
+            include: { events: true },
           },
         },
       });
@@ -74,7 +75,7 @@ export class InvoicesService {
     return this.prisma.invoice.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
-        eventLinks: true,
+        invoiceevent: true,
       },
     });
   }
@@ -83,8 +84,8 @@ export class InvoicesService {
     const invoice = await this.prisma.invoice.findUnique({
       where: { invoiceNumber },
       include: {
-        eventLinks: {
-          include: { event: true },
+        invoiceevent: {
+          include: { events: true },
         },
       },
     });
@@ -108,7 +109,7 @@ export class InvoicesService {
       });
 
       await tx.events.updateMany({
-        where: { invoiceEvents: { some: { invoiceId: updated.id } } },
+        where: { invoiceevent: { some: { invoiceId: updated.id } } },
         data: { billing_status: EventBillingStatus.paid },
       });
 
@@ -141,7 +142,7 @@ export class InvoicesService {
       where: { id: { in: ids } },
       select: {
         id: true,
-        invoiceEvents: { select: { invoiceId: true } },
+        invoiceevent: { select: { invoiceId: true } },
         order_total: true,
       },
     });
@@ -153,7 +154,7 @@ export class InvoicesService {
       throw new NotFoundException(`Events not found: ${missing.join(', ')}`);
     }
 
-    const alreadyLinked = events.filter((ev) => ev.invoiceEvents.length);
+    const alreadyLinked = events.filter((ev) => ev.invoiceevent.length);
     if (alreadyLinked.length) {
       throw new BadRequestException(
         `Events already invoiced: ${alreadyLinked.map((ev) => ev.id.toString()).join(', ')}`,
