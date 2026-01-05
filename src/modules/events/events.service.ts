@@ -677,9 +677,28 @@ export class EventsService {
   }
 
   /** Summary view by gcal id */
-  async getEventView(gcalId: string) {
+  async getEventView(idOrGcalId: string) {
+    // 1. If it looks like a numeric ID, try fetching by DB ID first
+    if (/^\d+$/.test(idOrGcalId)) {
+      try {
+        return await this.getEventViewById(BigInt(idOrGcalId));
+      } catch (e) {
+        // Fallthrough if not found? Or strict? 
+        // If it was meant to be a GCal ID that happens to be numeric (unlikely), 
+        // we might fail here. But given our domain, numeric = DB ID.
+        // If not found by DB ID, we could theoretically check GCal ID, 
+        // but it's cleaner to assume numeric string = DB ID.
+        if (e instanceof NotFoundException) {
+          // If not found as DB ID, maybe it is a weird GCal ID? 
+          // Let's allow fallthrough just in case.
+        } else {
+          throw e;
+        }
+      }
+    }
+
     const ev = await this.prisma.events.findUnique({
-      where: { gcalEventId: gcalId },
+      where: { gcalEventId: idOrGcalId },
       include: {
         customer: true,
         event_caterings: {
@@ -695,7 +714,7 @@ export class EventsService {
         },
       },
     });
-    if (!ev) throw new NotFoundException(`Event ${gcalId} not found`);
+    if (!ev) throw new NotFoundException(`Event ${idOrGcalId} not found`);
 
     let itemsSubtotal = 0;
 
