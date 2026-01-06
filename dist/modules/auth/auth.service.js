@@ -67,7 +67,7 @@ let AuthService = class AuthService {
                 email,
                 password: hashedPassword,
                 name,
-                role: client_1.Role.USER, // Default role
+                role: client_1.Role.STAFF, // Default role
             },
         });
         return {

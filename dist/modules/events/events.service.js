@@ -190,8 +190,6 @@ let EventsService = class EventsService {
             },
         });
     }
-    /** Import nested event tree (short tx; no connectOrCreate on email/phone) */
-    // src/modules/events/events.service.ts (inside EventsService)
     async importEventTree(dto) {
         //const eventInstant = parseAsCentralToUTC(dto.eventDatetime);
         const eventInstant = (0, date_conversion_1.toDateKeepWall)(dto.eventDatetime);
@@ -202,10 +200,7 @@ let EventsService = class EventsService {
         //log('Importing event:', dto);
         // If newOrder is true, create in Google Calendar first
         if (dto.newOrder) {
-            // Build basic details for Google
-            //const { start, end } = buildGoogleCentralTimes(dto.eventDatetime, 60);
-            //const end = new Date(start.getTime() + 1 * 60 * 60 * 1000); // +2h default
-            const startLocal = dto.eventDatetime.replace(' ', 'T'); // "YYYY-MM-DDTHH:mm:ss.SSS"
+            const startLocal = dto.eventDatetime.replace(' ', 'T');
             const endLocal = (() => {
                 const d = new Date(eventInstant.getTime() + 60 * 60 * 1000);
                 // format back as "YYYY-MM-DDTHH:mm:ss.SSS"
@@ -580,9 +575,29 @@ let EventsService = class EventsService {
         return row;
     }
     /** Summary view by gcal id */
-    async getEventView(gcalId) {
+    async getEventView(idOrGcalId) {
+        // 1. If it looks like a numeric ID, try fetching by DB ID first
+        if (/^\d+$/.test(idOrGcalId)) {
+            try {
+                return await this.getEventViewById(BigInt(idOrGcalId));
+            }
+            catch (e) {
+                // Fallthrough if not found? Or strict? 
+                // If it was meant to be a GCal ID that happens to be numeric (unlikely), 
+                // we might fail here. But given our domain, numeric = DB ID.
+                // If not found by DB ID, we could theoretically check GCal ID, 
+                // but it's cleaner to assume numeric string = DB ID.
+                if (e instanceof common_1.NotFoundException) {
+                    // If not found as DB ID, maybe it is a weird GCal ID? 
+                    // Let's allow fallthrough just in case.
+                }
+                else {
+                    throw e;
+                }
+            }
+        }
         const ev = await this.prisma.events.findUnique({
-            where: { gcalEventId: gcalId },
+            where: { gcalEventId: idOrGcalId },
             include: {
                 customer: true,
                 event_caterings: {
@@ -599,7 +614,7 @@ let EventsService = class EventsService {
             },
         });
         if (!ev)
-            throw new common_1.NotFoundException(`Event ${gcalId} not found`);
+            throw new common_1.NotFoundException(`Event ${idOrGcalId} not found`);
         let itemsSubtotal = 0;
         const caterings = ev.event_caterings.map((c) => {
             const orders = c.event_catering_orders.map((o) => {

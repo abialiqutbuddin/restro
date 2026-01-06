@@ -29,6 +29,7 @@ const settings_module_1 = require("./modules/settings/settings.module");
 const change_requests_module_1 = require("./modules/change-requests/change-requests.module");
 const email_queue_module_1 = require("./modules/email-queue/email-queue.module");
 const kitchen_reports_module_1 = require("./modules/kitchen-reports/kitchen-reports.module");
+const users_module_1 = require("./modules/users/users.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -55,6 +56,7 @@ exports.AppModule = AppModule = __decorate([
             email_queue_module_1.EmailQueueModule,
             change_requests_module_1.ChangeRequestsModule,
             kitchen_reports_module_1.KitchenReportsModule,
+            users_module_1.UsersModule,
         ],
         controllers: [seed_controller_1.SeedController],
     })

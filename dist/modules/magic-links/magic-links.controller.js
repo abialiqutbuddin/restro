@@ -100,6 +100,28 @@ let MagicLinksController = class MagicLinksController {
             is_active: !isExpired && !isRevoked,
         };
     }
+    async getHistory(orderId) {
+        const links = await this.magicLinksService.getLinksForOrder(orderId);
+        const now = new Date();
+        return links.map((link) => {
+            const isExpired = now > link.expires_at;
+            const isRevoked = !!link.revoked_at;
+            return {
+                id: link.id.toString(),
+                order_id: link.order_id.toString(),
+                token_hash: link.token_hash,
+                raw_token: link.raw_token,
+                created_at: link.created_at,
+                expires_at: link.expires_at,
+                revoked_at: link.revoked_at,
+                access_count: link.access_count,
+                last_accessed_at: link.last_accessed_at,
+                is_expired: isExpired,
+                is_revoked: isRevoked,
+                is_active: !isExpired && !isRevoked,
+            };
+        });
+    }
     async validate(token) {
         const { status, link } = await this.magicLinksService.validateLinkDetailed(token);
         if (status !== 'VALID' || !link) {
@@ -177,6 +199,13 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], MagicLinksController.prototype, "getStatus", null);
+__decorate([
+    (0, common_1.Get)('history/:orderId'),
+    __param(0, (0, common_1.Param)('orderId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], MagicLinksController.prototype, "getHistory", null);
 __decorate([
     (0, common_1.Get)('validate/:token'),
     __param(0, (0, common_1.Param)('token')),
