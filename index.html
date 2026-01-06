@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="project_structure">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>project_structure</title>
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Print Stylesheet for Prep List -->
+  <style media="print">
+    @media print {
+      /* Hide all non-printable elements */
+      header,
+      .app-bar,
+      button,
+      [role="button"],
+      .floating-action-button,
+      .filter-section,
+      nav,
+      aside,
+      [aria-label="print-controls"],
+      flt-semantics[aria-label="print-controls"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      /* Hide all buttons in Flutter app */
+      flt-glass-pane button,
+      flt-glass-pane [role="button"],
+      flt-glass-pane header,
+      flt-glass-pane [role="toolbar"],
+      flt-glass-pane nav,
+      flt-semantics button {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        max-height: 0 !important;
+      }
+
+      /* Force hide AppBar area */
+      flt-glass-pane > flt-semantics:first-child {
+        display: none !important;
+      }
+
+      /* Show only print content */
+      [aria-label="print-content"],
+      flt-semantics[aria-label="print-content"] {
+        display: block !important;
+        visibility: visible !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      /* Reset page styling - support both A4 and US Letter */
+      @page {
+        size: auto;  /* Auto-detect paper size (A4 or Letter) */
+        margin: 0.5in 0.5in 0.75in 0.5in;  /* top right bottom left */
+      }
+
+      html, body {
+        background: white !important;
+        color: black !important;
+        font-size: 10pt;
+        line-height: 1.3;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+      }
+
+      /* Ensure Flutter canvas fills page */
+      flt-glass-pane {
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        position: static !important;
+      }
+
+      /* Print content should be full width */
+      [aria-label="print-content"],
+      flt-semantics[aria-label="print-content"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      /* Remove shadows */
+      * {
+        box-shadow: none !important;
+        text-shadow: none !important;
+      }
+
+      /* Preserve table backgrounds */
+      table th {
+        background: #e0f2f1 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      /* Headers */
+      h1, h2, h3 {
+        page-break-after: avoid;
+        color: black !important;
+        font-weight: bold;
+      }
+
+      h1 { font-size: 20pt; margin-bottom: 8pt; }
+      h2 { font-size: 14pt; margin-top: 12pt; margin-bottom: 6pt; }
+
+      /* Tables */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        page-break-inside: auto;
+        margin-bottom: 12pt;
+      }
+
+      tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+      }
+
+      td, th {
+        padding: 6pt;
+        border: 1pt solid #333 !important;
+      }
+
+      th {
+        font-weight: bold;
+        text-align: center;
+      }
+
+      /* Containers - Vertical Layout */
+      .container,
+      .breakdown-item {
+        page-break-inside: avoid;
+        margin-bottom: 12pt;
+        border: 1pt solid #333 !important;
+        padding: 8pt;
+      }
+
+      /* Menu item blocks (vertical layout) */
+      flt-semantics[aria-label="print-content"] > * {
+        width: 100% !important;
+        page-break-inside: avoid;
+      }
+
+      /* Prevent orphaned content */
+      div, section, article {
+        orphans: 3;
+        widows: 3;
+      }
+
+      /* Item containers should not break across pages */
+      [data-item-container],
+      .item-container {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      /* Date headers */
+      .date-header {
+        background: #e0f2f1 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        border: 1pt solid #333 !important;
+        padding: 8pt 12pt;
+        margin: 12pt 0 8pt 0;
+        page-break-after: avoid;
+        font-weight: bold;
+      }
+
+      /* Summary boxes */
+      .summary-box {
+        background: #f5f5f5 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        border: 1pt solid #333 !important;
+        padding: 8pt;
+        margin-bottom: 12pt;
+      }
+
+      /* Quantity badges */
+      .quantity-badge {
+        background: #e0f2f1 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        border: 1pt solid #009688 !important;
+        padding: 2pt 6pt;
+        border-radius: 10pt;
+        font-weight: bold;
+      }
+
+      /* Ensure all colors print */
+      * {
+        color: black !important;
+      }
+
+      /* Page numbers */
+      @page {
+        @bottom-right {
+          content: "Page " counter(page);
+        }
+      }
+    }
+  </style>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
