@@ -1,0 +1,33 @@
+name: Deploy NestJS to Azure App Service
+
+on:
+  push:
+    branches:
+      - restauarant-management-backend
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # IMPORTANT: Node version must match Azure
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      # DO NOT npm install
+      # DO NOT build
+      # DO NOT generate Prisma here
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: restaurant-management
+          slot-name: Production
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_4832F66A63E4476E86462530A217F739 }}
+          package: .
