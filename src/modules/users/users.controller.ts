@@ -1,11 +1,18 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { Role } from '@prisma/client';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('users')
 export class UsersController {
     constructor(private readonly usersService: UsersService) { }
+
+    @UseGuards(JwtAuthGuard)
+    @Get('me/role')
+    async getCurrentUserRole(@Request() req: any) {
+        return this.usersService.getUserRole(BigInt(req.user.userId));
+    }
 
     @Get()
     async findAll(

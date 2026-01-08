@@ -7,6 +7,12 @@ export enum KitchenPrepStatusEnum {
   COMPLETED = 'completed',
 }
 
+export enum AuditActorType {
+  CLIENT = 'CLIENT',
+  STAFF = 'STAFF',
+  SYSTEM = 'SYSTEM',
+}
+
 export class UpdatePrepStatusDto {
   @IsNumber()
   @Type(() => Number)
@@ -27,4 +33,17 @@ export class UpdatePrepStatusDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  changedById?: number;
+
+  @IsOptional()
+  @IsString()
+  changedByName?: string;
+
+  @IsOptional()
+  @IsEnum(AuditActorType)
+  changedByType?: AuditActorType = AuditActorType.STAFF;
 }

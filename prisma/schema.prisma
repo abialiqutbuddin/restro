@@ -24,17 +24,18 @@ model customers {
 }
 
 model users {
-  id                       BigInt                  @id @default(autoincrement())
-  email                    String                  @unique @db.VarChar(150)
-  password                 String                  @db.VarChar(255)
-  name                     String?                 @db.VarChar(150)
-  role                     Role                    @default(STAFF)
-  is_active                Boolean                 @default(true)
-  created_at               DateTime                @default(now())
-  updated_at               DateTime                @updatedAt
-  audit_logs               order_audit_logs[]
-  reviewed_change_requests order_change_requests[]
-  magic_links_created      order_magic_links[]
+  id                          BigInt                        @id @default(autoincrement())
+  email                       String                        @unique @db.VarChar(150)
+  password                    String                        @db.VarChar(255)
+  name                        String?                       @db.VarChar(150)
+  role                        Role                          @default(STAFF)
+  is_active                   Boolean                       @default(true)
+  created_at                  DateTime                      @default(now())
+  updated_at                  DateTime                      @updatedAt
+  audit_logs                  order_audit_logs[]
+  reviewed_change_requests    order_change_requests[]
+  magic_links_created         order_magic_links[]
+  kitchen_prep_status_changes kitchen_prep_status_audit[]
 }
 
 /// ---------- Lookups (unchanged) ----------
@@ -50,25 +51,27 @@ model category {
 }
 
 model menu_items {
-  id                        BigInt                      @id @default(autoincrement())
-  name                      String                      @unique @db.VarChar(150)
-  description               String?                     @db.Text
-  active                    Boolean                     @default(true)
-  created_at                DateTime                    @default(now())
-  updated_at                DateTime                    @updatedAt
+  id                        BigInt                        @id @default(autoincrement())
+  name                      String                        @unique @db.VarChar(150)
+  description               String?                       @db.Text
+  active                    Boolean                       @default(true)
+  created_at                DateTime                      @default(now())
+  updated_at                DateTime                      @updatedAt
   event_catering_menu_items event_catering_menu_items[]
   kitchen_prep_status       KitchenPrepStatusModel[]
+  kitchen_prep_audit        kitchen_prep_status_audit[]
 }
 
 model sizes {
-  id                        BigInt                      @id @default(autoincrement())
-  name                      String                      @unique @db.VarChar(80)
-  description               String?                     @db.Text
-  active                    Boolean                     @default(true)
-  created_at                DateTime                    @default(now())
-  updated_at                DateTime                    @updatedAt
+  id                        BigInt                        @id @default(autoincrement())
+  name                      String                        @unique @db.VarChar(80)
+  description               String?                       @db.Text
+  active                    Boolean                       @default(true)
+  created_at                DateTime                      @default(now())
+  updated_at                DateTime                      @updatedAt
   event_catering_menu_items event_catering_menu_items[]
   kitchen_prep_status       KitchenPrepStatusModel[]
+  kitchen_prep_audit        kitchen_prep_status_audit[]
 }
 
 model pricing_unit {
@@ -96,37 +99,38 @@ model category_unit {
 
 /// ---------- Core ----------
 model events {
-  id                     BigInt                  @id @default(autoincrement())
+  id                     BigInt                      @id @default(autoincrement())
   event_datetime         DateTime
-  venue                  String?                 @db.VarChar(200)
-  delivery_charges       Decimal?                @db.Decimal(12, 2)
-  is_delivery            Boolean?                @default(false)
-  service_charges        Decimal?                @db.Decimal(12, 2)
+  venue                  String?                     @db.VarChar(200)
+  delivery_charges       Decimal?                    @db.Decimal(12, 2)
+  is_delivery            Boolean?                    @default(false)
+  service_charges        Decimal?                    @db.Decimal(12, 2)
   headcount_est          Int?
-  notes                  String?                 @db.Text
-  calender_text          String?                 @db.Text
-  order_total            Decimal?                @db.Decimal(12, 2)
-  status                 String?                 @db.VarChar(50)
-  created_at             DateTime                @default(now())
-  updated_at             DateTime                @updatedAt
+  notes                  String?                     @db.Text
+  calender_text          String?                     @db.Text
+  order_total            Decimal?                    @db.Decimal(12, 2)
+  status                 String?                     @db.VarChar(50)
+  created_at             DateTime                    @default(now())
+  updated_at             DateTime                    @updatedAt
   customer_id            BigInt?
-  discount               Decimal?                @db.Decimal(12, 2)
-  billing_status         EventBillingStatus      @default(unbilled)
-  sales_tax_amount       Decimal?                @db.Decimal(12, 2)
-  sales_tax_pct          Decimal?                @db.Decimal(5, 2)
-  gcalEventId            String?                 @unique(map: "uniq_events_gcal_event_id")
-  event_type             String?                 @db.VarChar(50)
-  is_locked              Boolean                 @default(false)
+  discount               Decimal?                    @db.Decimal(12, 2)
+  billing_status         EventBillingStatus          @default(unbilled)
+  sales_tax_amount       Decimal?                    @db.Decimal(12, 2)
+  sales_tax_pct          Decimal?                    @db.Decimal(5, 2)
+  gcalEventId            String?                     @unique(map: "uniq_events_gcal_event_id")
+  event_type             String?                     @db.VarChar(50)
+  is_locked              Boolean                     @default(false)
   approved_at            DateTime?
-  client_approval_status ApprovalStatus          @default(PENDING)
+  client_approval_status ApprovalStatus              @default(PENDING)
   event_caterings        event_caterings[]
   payments               event_payments[]
-  customer               customers?              @relation(fields: [customer_id], references: [id])
+  customer               customers?                  @relation(fields: [customer_id], references: [id])
   invoiceevent           invoiceevent[]
   audit_logs             order_audit_logs[]
   change_requests        order_change_requests[]
   magic_links            order_magic_links[]
   kitchen_prep_status    KitchenPrepStatusModel[]
+  kitchen_prep_audit     kitchen_prep_status_audit[]
 
   @@index([customer_id])
   @@index([billing_status, event_datetime])
@@ -378,6 +382,34 @@ model KitchenPrepStatusModel {
   @@index([menu_item_id])
   @@index([status])
   @@map("kitchen_prep_status")
+}
+
+model kitchen_prep_status_audit {
+  id               BigInt            @id @default(autoincrement())
+  prep_status_id   BigInt?
+  event_id         BigInt
+  menu_item_id     BigInt
+  size_id          BigInt?
+  old_status       KitchenPrepStatus?
+  new_status       KitchenPrepStatus
+  old_notes        String?           @db.Text
+  new_notes        String?           @db.Text
+  changed_by_id    BigInt?
+  changed_by_name  String?           @db.VarChar(150)
+  changed_by_type  AuditActorType    @default(STAFF)
+  changed_at       DateTime          @default(now())
+  metadata         Json?
+
+  event            events            @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  menu_item        menu_items        @relation(fields: [menu_item_id], references: [id], onDelete: Cascade)
+  size             sizes?            @relation(fields: [size_id], references: [id], onDelete: SetNull)
+  changed_by       users?            @relation(fields: [changed_by_id], references: [id], onDelete: SetNull)
+
+  @@index([prep_status_id])
+  @@index([event_id])
+  @@index([menu_item_id])
+  @@index([changed_by_id])
+  @@index([changed_at])
 }
 
 enum EmailStatus {

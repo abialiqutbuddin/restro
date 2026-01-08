@@ -405,7 +405,7 @@ export class KitchenReportsService {
    * Update or create prep status for a menu item in an event
    */
   async updatePrepStatus(dto: UpdatePrepStatusDto) {
-    const { eventId, menuItemId, sizeId, status, notes } = dto;
+    const { eventId, menuItemId, sizeId, status, notes, changedById, changedByName, changedByType } = dto;
 
     try {
       // Find existing record first
@@ -418,6 +418,8 @@ export class KitchenReportsService {
       });
 
       let prepStatus;
+      const oldStatus = existing?.status;
+      const oldNotes = existing?.notes;
 
       if (existing) {
         // Update existing record
@@ -496,6 +498,33 @@ export class KitchenReportsService {
         });
       }
 
+      // Create audit log entry
+      try {
+        await (this.prisma as any).kitchen_prep_status_audit.create({
+          data: {
+            prep_status_id: prepStatus.id,
+            event_id: BigInt(eventId),
+            menu_item_id: BigInt(menuItemId),
+            ...(sizeId && { size_id: BigInt(sizeId) }),
+            old_status: oldStatus,
+            new_status: status,
+            old_notes: oldNotes,
+            new_notes: notes,
+            ...(changedById && { changed_by_id: BigInt(changedById) }),
+            changed_by_name: changedByName,
+            changed_by_type: changedByType || 'STAFF',
+            changed_at: new Date(),
+            metadata: {
+              action: existing ? 'UPDATE' : 'CREATE',
+              changedFields: existing ? this.getChangedFields(existing, { status, notes }) : null,
+            },
+          },
+        });
+      } catch (auditError) {
+        // Log audit error but don't fail the main operation
+        console.error('Error creating audit log:', auditError);
+      }
+
       return {
         success: true,
         message: 'Prep status updated successfully',
@@ -503,6 +532,108 @@ export class KitchenReportsService {
       };
     } catch (error) {
       console.error('Error updating prep status:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Helper method to identify which fields changed
+   */
+  private getChangedFields(existing: any, updated: any): string[] {
+    const changed: string[] = [];
+    if (existing.status !== updated.status) changed.push('status');
+    if (existing.notes !== updated.notes) changed.push('notes');
+    return changed;
+  }
+
+  /**
+   * Get audit logs for kitchen prep status changes
+   */
+  async getPrepStatusAuditLogs(query: any) {
+    const {
+      eventId,
+      menuItemId,
+      sizeId,
+      changedById,
+      changedByType,
+      startDate,
+      endDate,
+      limit = 100,
+      offset = 0,
+    } = query;
+
+    try {
+      const where: any = {};
+
+      if (eventId) where.event_id = BigInt(eventId);
+      if (menuItemId) where.menu_item_id = BigInt(menuItemId);
+      if (sizeId) where.size_id = BigInt(sizeId);
+      if (changedById) where.changed_by_id = BigInt(changedById);
+      if (changedByType) where.changed_by_type = changedByType;
+
+      if (startDate || endDate) {
+        where.changed_at = {};
+        if (startDate) where.changed_at.gte = new Date(startDate);
+        if (endDate) where.changed_at.lte = new Date(endDate);
+      }
+
+      const [auditLogs, total] = await Promise.all([
+        (this.prisma as any).kitchen_prep_status_audit.findMany({
+          where,
+          include: {
+            event: {
+              select: {
+                id: true,
+                event_datetime: true,
+                venue: true,
+                customer: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            },
+            menu_item: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            size: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            changed_by: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: {
+            changed_at: 'desc',
+          },
+          take: Number(limit),
+          skip: Number(offset),
+        }),
+        (this.prisma as any).kitchen_prep_status_audit.count({ where }),
+      ]);
+
+      return {
+        success: true,
+        data: auditLogs,
+        pagination: {
+          total,
+          limit: Number(limit),
+          offset: Number(offset),
+          hasMore: offset + limit < total,
+        },
+      };
+    } catch (error) {
+      console.error('Error fetching audit logs:', error);
       throw error;
     }
   }

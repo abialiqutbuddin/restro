@@ -211,4 +211,32 @@ export class UsersService {
             data: { is_active: false },
         });
     }
+
+    async getUserRole(id: bigint) {
+        const user = await this.prisma.users.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                is_active: true,
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException(`User with ID ${id} not found`);
+        }
+
+        if (!user.is_active) {
+            throw new NotFoundException('User account is not active');
+        }
+
+        return {
+            id: user.id.toString(),
+            email: user.email,
+            name: user.name,
+            role: user.role,
+        };
+    }
 }

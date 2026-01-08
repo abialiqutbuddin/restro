@@ -1,7 +1,12 @@
-import { Controller, Get, Query, Patch, Body } from '@nestjs/common';
+import { Controller, Get, Query, Patch, Body, UseGuards } from '@nestjs/common';
 import { KitchenReportsService } from './kitchen-reports.service';
 import { KitchenConsolidationQueryDto } from './dto/kitchen-consolidation.dto';
 import { UpdatePrepStatusDto } from './dto/update-prep-status.dto';
+import { KitchenPrepAuditQueryDto } from './dto/kitchen-prep-audit-query.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles/roles.guard';
+import { Roles } from '../auth/roles/roles.decorator';
+import { Role } from '@prisma/client';
 
 @Controller('kitchen-reports')
 export class KitchenReportsController {
@@ -27,6 +32,8 @@ export class KitchenReportsController {
    * GET /kitchen-reports/consolidation?date=2025-12-31&includeClientName=true
    * GET /kitchen-reports/consolidation?startDate=2025-12-25&endDate=2025-12-31&eventType=wedding
    */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.KITCHEN_STAFF, Role.STAFF, Role.ADMIN, Role.SUPER_ADMIN)
   @Get('consolidation')
   async getConsolidationReport(@Query() query: KitchenConsolidationQueryDto) {
     return this.kitchenReportsService.getKitchenConsolidationReport(query);
@@ -43,6 +50,8 @@ export class KitchenReportsController {
    * Example:
    * GET /kitchen-reports/prep-list?date=2025-12-31
    */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.KITCHEN_STAFF, Role.STAFF, Role.ADMIN, Role.SUPER_ADMIN)
   @Get('prep-list')
   async getPrepList(@Query() query: KitchenConsolidationQueryDto) {
     return this.kitchenReportsService.getPrepList(query);
@@ -71,6 +80,8 @@ export class KitchenReportsController {
    * GET /kitchen-reports/daily-prep-list?startDate=2025-12-31&endDate=2026-01-06
    * GET /kitchen-reports/daily-prep-list?eventType=wedding&timeWindow=evening
    */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.KITCHEN_STAFF, Role.STAFF, Role.ADMIN, Role.SUPER_ADMIN)
   @Get('daily-prep-list')
   async getDailyPrepList(@Query() query: KitchenConsolidationQueryDto) {
     return this.kitchenReportsService.getDailyPrepList(query);
@@ -81,6 +92,7 @@ export class KitchenReportsController {
    *
    * Updates the preparation status for a specific menu item in an event.
    * Creates a new status record if one doesn't exist, or updates the existing one.
+   * Automatically logs the change with actor information.
    *
    * Body Parameters:
    * - eventId: Event ID (number)
@@ -88,13 +100,58 @@ export class KitchenReportsController {
    * - sizeId: Size ID (optional, number)
    * - status: Status value (not_started, in_progress, completed)
    * - notes: Optional notes (string)
+   * - changedById: ID of user making the change (optional, number)
+   * - changedByName: Name of user making the change (optional, string)
+   * - changedByType: Type of actor (CLIENT, STAFF, SYSTEM) (optional, defaults to STAFF)
    *
    * Example:
    * PATCH /kitchen-reports/prep-status
-   * Body: { "eventId": 123, "menuItemId": 456, "sizeId": 789, "status": "in_progress", "notes": "Started prep" }
+   * Body: {
+   *   "eventId": 123,
+   *   "menuItemId": 456,
+   *   "sizeId": 789,
+   *   "status": "in_progress",
+   *   "notes": "Started prep",
+   *   "changedById": 1,
+   *   "changedByName": "Chef John",
+   *   "changedByType": "STAFF"
+   * }
    */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.KITCHEN_STAFF)
   @Patch('prep-status')
   async updatePrepStatus(@Body() dto: UpdatePrepStatusDto) {
     return this.kitchenReportsService.updatePrepStatus(dto);
+  }
+
+  /**
+   * GET /kitchen-reports/prep-status/audit
+   *
+   * Retrieves audit logs for kitchen prep status changes.
+   * Returns a paginated list of all changes made to prep statuses.
+   *
+   * Query Parameters (all optional):
+   * - eventId: Filter by event ID (number)
+   * - menuItemId: Filter by menu item ID (number)
+   * - sizeId: Filter by size ID (number)
+   * - changedById: Filter by user who made the change (number)
+   * - changedByType: Filter by actor type (CLIENT, STAFF, SYSTEM)
+   * - startDate: Filter changes from this date (YYYY-MM-DD)
+   * - endDate: Filter changes until this date (YYYY-MM-DD)
+   * - limit: Number of records to return (default: 100)
+   * - offset: Number of records to skip (default: 0)
+   *
+   * Examples:
+   * GET /kitchen-reports/prep-status/audit
+   * GET /kitchen-reports/prep-status/audit?eventId=123
+   * GET /kitchen-reports/prep-status/audit?menuItemId=456&limit=50
+   * GET /kitchen-reports/prep-status/audit?startDate=2026-01-01&endDate=2026-01-31
+   * GET /kitchen-reports/prep-status/audit?changedByType=STAFF
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.KITCHEN_STAFF, Role.STAFF, Role.ADMIN, Role.SUPER_ADMIN)
+  @Get('prep-status/audit')
+  async getPrepStatusAuditLogs(@Query() query: KitchenPrepAuditQueryDto) {
+    return this.kitchenReportsService.getPrepStatusAuditLogs(query);
   }
 }

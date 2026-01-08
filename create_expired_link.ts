@@ -31,7 +31,6 @@ async function main() {
             created_by_user_id: null, // System/Test
         },
     });
-
     console.log('\n--- Expired Link Created ---');
     console.log(`Order ID: ${orderId}`);
     console.log(`Token: ${token}`); // This is what enters the URL
@@ -40,7 +39,6 @@ async function main() {
     console.log(`Magic Link URL: http://localhost:50783/magic/${token}`);
     console.log('----------------------------\n');
 }
-
 main()
     .catch((e) => {
         console.error(e);
